@@ -1,14 +1,14 @@
 import sys
 from pathlib import Path
-import random
 
 from get_conf import get_conf
-from model import WINDOW_SIZE
+from model import WINDOW_SIZE, Zone
 from error import print_error
 from view import View
 from drone import Drone
-from draw import draw_connections, create_drone_drawer, draw_zones
-from pathfinder import get_all_existing_paths
+from draw import draw_connections, create_drone_drawer, create_zones_drawer
+from pathfinder import assign_paths_to_drones
+from simulation import SimulationEngine
 
 try:
     import pygame
@@ -17,13 +17,54 @@ except ModuleNotFoundError as er:
     sys.exit(1)
 
 
-# Combien de pixels représente "1" unité de position dans le fichier de config.
-# Exemple : la zone "hub 3 4" sera dessinée en (3*SCALE, 4*SCALE) pixels.
-# On peux changer cette valeur pour zoomer / dézoomer.
+# Nombre de frames pygame entre chaque tour de simulation
+FRAMES_PER_TURN: int = 80
+
+
+def parse_turn_log(
+    log_line: str,
+    zones: dict[str, Zone],
+) -> dict[int, tuple[float, float]]:
+    """
+    Lit une ligne de log de simulation et retourne
+    un dictionnaire {drone_id: (x, y)} pour les drones qui bougent ce tour.
+    Les drones en transit (connexion vers restricted) gardent
+    une position interpolée entre départ et destination.
+    """
+    moves: dict[int, tuple[float, float]] = {}
+    if not log_line.strip():
+        return moves
+
+    for token in log_line.strip().split():
+        # Format : D<id>-<zone_ou_connexion>
+        parts = token.split("-", 1)
+        if len(parts) != 2:
+            continue
+        drone_id = int(parts[0][1:]) - 1  # "D1" -> index 0
+        target = parts[1]
+
+        if target in zones:
+            z = zones[target]
+            moves[drone_id] = (float(z.coordinate_x), float(z.coordinate_y))
+        else:
+            # Transit vers restricted : on affiche au milieu de la connexion
+            conn_parts = target.split("-")
+            if len(conn_parts) == 2:
+                z1_name, z2_name = conn_parts
+                if z1_name in zones and z2_name in zones:
+                    z1 = zones[z1_name]
+                    z2 = zones[z2_name]
+                    mid_x = (z1.coordinate_x + z2.coordinate_x) / 2.0
+                    mid_y = (z1.coordinate_y + z2.coordinate_y) / 2.0
+                    moves[drone_id] = (mid_x, mid_y)
+    return moves
 
 
 def base_pygame() -> None:
-    """Initialise pygame, charge les images et lance la boucle d'affichage."""
+    """
+    Initialise pygame, lance la simulation en arrière-plan,
+    puis affiche l'animation tour par tour.
+    """
     pygame.init()
 
     screen = pygame.display.set_mode(WINDOW_SIZE)
@@ -32,141 +73,181 @@ def base_pygame() -> None:
 
     base_dir = Path(__file__).resolve().parent
 
-    # --- Chargement des images ---
-    # On vérifie que chaque fichier existe avant de tenter de le charger
+    # --- Vérification et chargement des fichiers graphiques ---
     image_files = {
         "background": base_dir / "background.png",
         "first_drone": base_dir / "first_drone.png",
-        "second_drone": base_dir / "second_drone.png",
         "zone": base_dir / "zone.png",
         "text_edge": base_dir / "text_edge.png",
     }
-
     for name, path in image_files.items():
         if not path.exists():
-            print_error(f"Image file not found: '{path}'")
+            print_error(f"Missing image file: {path.name}")
 
-    # Ici on est sûr que les fichiers existent
-    sky = pygame.image.load(str(image_files["background"]))
+    background_ = pygame.image.load(
+        str(image_files["background"])
+    ).convert_alpha()
+    zone_img = pygame.image.load(str(image_files["zone"])).convert_alpha()
     drone_img = pygame.image.load(
-        str(image_files[random.choice(["first_drone", "second_drone"])])
-    )
-    zone_img = pygame.image.load(str(image_files["zone"]))
-    edge_img = pygame.image.load(str(image_files["text_edge"]))
+        str(image_files["first_drone"])
+    ).convert_alpha()
+    edge_img = pygame.image.load(str(image_files["text_edge"])).convert_alpha()
 
-    background_sky = pygame.transform.scale(sky, WINDOW_SIZE)
+    background_ = pygame.transform.scale(background_, WINDOW_SIZE)
     small_drone = pygame.transform.scale(drone_img, (95, 95))
     small_zone = pygame.transform.scale(zone_img, (100, 70))
     edge_img = pygame.transform.scale(edge_img, (WINDOW_SIZE[0], 300))
 
-    # font = pygame.font.SysFont(None, 20)
-
-    # --- Lecture du fichier de configuration ---
+    # --- Lecture de la configuration ---
     conf = get_conf()
-    zones = conf["zones"]
+    zones: dict[str, Zone] = conf["zones"]
     connections = conf["connections"]
+    nb_drones: int = conf["nb_drones"]
+    start_name: str = conf["start_zone"]
+    end_name: str = conf["end_zone"]
 
-    start_zone = zones[conf["start_zone"]]
-    # end_zone = zones[conf["end_zone"]]
+    # --- Calcul des chemins et lancement de la simulation ---
+    drone_paths = assign_paths_to_drones(
+        nb_drones, zones, connections, start_name, end_name
+    )
+    if not drone_paths:
+        print_error("No valid path found from start to end.")
+        return
 
-    # --- Création de la caméra ---
+    engine = SimulationEngine(
+        zones=zones,
+        connections=connections,
+        nb_drones=nb_drones,
+        start=start_name,
+        end=end_name,
+        drone_paths=drone_paths,
+    )
+    turn_logs = engine.run()
+
+    # Affichage du résultat dans le terminal dès que la simulation est prête
+    engine.print_results()
+
+    # --- Initialisation des drones à la zone de départ ---
+    start_zone = zones[start_name]
+    drones: list[Drone] = [
+        Drone(
+            position=(
+                float(start_zone.coordinate_x),
+                float(start_zone.coordinate_y),
+            )
+        )
+        for _ in range(nb_drones)
+    ]
+
+    # --- Initialisation de la caméra ---
     view = View()
-    pos: list[tuple[int, int]] = []
-    for zone_name, zone_obj in conf["zones"].items():
-        # On récupère directement les vraies coordonnées
-        pos.append((zone_obj.coordinate_x, zone_obj.coordinate_y))
-    view.best_view(pos, (start_zone.coordinate_x, start_zone.coordinate_y))
-
-    # --- Création d'un drone de démonstration ---
-    # Il part de la zone de départ et va vers la zone d'arrivée
-    demo_drone = Drone(
-        position=(
-            float(start_zone.coordinate_x),
-            float(start_zone.coordinate_y),
-        ),
+    zones_positions = [
+        (z.coordinate_x, z.coordinate_y) for z in zones.values()
+    ]
+    view.best_view(
+        zones_positions,
+        (start_zone.coordinate_x, start_zone.coordinate_y),
     )
 
-    # from pathfinder import pathfinder
-
-    # print(pathfinder(demo_drone))
-
-    connections = conf["connections"]
-
-    # demo_drone.start_move((end_zone.coordinate_x, end_zone.coordinate_y))
-
-    # --- Boucle principale ---
-    running = True
-    animation = False
+    draw_zones = create_zones_drawer()
     draw_drone = create_drone_drawer()
-    path_found = []
-    # 1. INITIALISATION PAR DÉFAUT (En dehors et avant le try)
 
-    try:
-        paths_found = get_all_existing_paths()
-        for path_f in paths_found:
-            print(len(path_f))
-        if paths_found:
-            path_found = paths_found[0]
-    except Exception as e:
-        # On affiche la vraie erreur dans la console pour savoir ce qui cloche
-        print(f"Error: {e}")
+    # --- Variables de contrôle de l'animation ---
+    current_turn: int = 0  # tour de simulation en cours
+    frame_counter: int = 0  # frames écoulées depuis le début du tour
+    paused: bool = True
+    running: bool = True
+
+    # Font pour afficher le numéro de tour et les infos
+    font = pygame.font.SysFont("impact", 40)
 
     while running:
-
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_s:
+                    running = False
+                elif event.key == pygame.K_a:
+                    # Pause / reprise de l'animation
+                    paused = not paused
+                elif event.key == pygame.K_n:
+                    # Avancer d'un tour manuellement
+                    if current_turn < len(turn_logs):
+                        current_turn += 1
+                        frame_counter = 0
             view.handle_event(event)
-
-            # Avance l'animation du drone d'un pas
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_a:
-                    animation = not animation
 
         view.camera()
 
-        if animation and not demo_drone.is_moving:
-            # 1. On cherche le nom de la zone où se trouve le drone
-            zone_name = ""
-            for name in zones:
-                zone = zones[name]
-                if (
-                    zone.coordinate_x,
-                    zone.coordinate_y,
-                ) == demo_drone.position:
-                    zone_name = name
-                    break
+        # --- Avancement automatique des tours ---
+        if not paused and current_turn < len(turn_logs):
+            frame_counter += 1
+            if frame_counter >= FRAMES_PER_TURN:
+                current_turn += 1
+                frame_counter = 0
 
-            target_zone_name = None
+        # --- Mise à jour des positions des drones selon le tour actuel ---
+        if current_turn > 0 and current_turn <= len(turn_logs):
+            log_line = turn_logs[current_turn - 1]
+            moves = parse_turn_log(log_line, zones)
+            for drone_id, target_pos in moves.items():
+                if drone_id < len(drones):
+                    drone = drones[drone_id]
+                    if drone.target_pos != target_pos:
+                        drone.start_move(target_pos)
 
-            # Ajout du -1 indispensable pour éviter
-            # le crash de l'IndexError à la fin du chemin
-            for i in range(len(path_found) - 1):
-                if path_found[i] == zone_name:
-                    target_zone_name = path_found[i + 1]
-                    break
+        # Mise à jour de l'animation de chaque drone (rebond + interpolation)
+        for drone in drones:
+            drone.update()
 
-            if target_zone_name:
-                target_zone = zones[target_zone_name]
-                demo_drone.start_move(
-                    (target_zone.coordinate_x, target_zone.coordinate_y)
-                )
-
-        if animation:
-            demo_drone.update()
-
-        # Dessin de la frame
-        screen.blit(background_sky, (0, 0))
+        # --- Rendu graphique ---
+        screen.fill(pygame.Color("lightblue"))
+        screen.blit(background_, (0, 0))
         draw_connections(screen, view, zones, connections)
         draw_zones(screen, view, zones, small_zone)
-        draw_drone(screen, view, demo_drone, small_drone)
-        # draw_edge(screen, view, edge_img)
 
-        clock.tick(60)
+        # Affichage des drones avec un léger décalage visuel entre eux
+        for index, drone in enumerate(drones):
+            old_pos = drone.position
+            drone.position = (
+                old_pos[0] + drone.offset_x,
+                old_pos[1] + drone.offset_y,
+            )
+            draw_drone(screen, view, drone, small_drone, index)
+            drone.position = old_pos
+
+        # --- HUD : infos en bas de l'écran ---
+        screen.blit(edge_img, (0, WINDOW_SIZE[1] - 80))
+        total_turns = len(turn_logs)
+        hud_turn = font.render(
+            f"Turn: {current_turn}/{total_turns}  "
+            f"[A] Go/Pause  |  [N] Next  |  [ESC/S] Quit",
+            True,
+            pygame.Color("black"),
+        )
+        screen.blit(hud_turn, (300, WINDOW_SIZE[1] - 50))
+
+        # Message de fin quand tous les drones sont arrivés
+        if current_turn >= total_turns:
+            done_surf = font.render(
+                f"Simulation complete! {nb_drones} drones delivered "
+                f"in {total_turns} turns.",
+                True,
+                pygame.Color("yellow"),
+            )
+            screen.blit(done_surf, (20, WINDOW_SIZE[1] - 35))
+
+        clock.tick(200)
         pygame.display.flip()
 
     pygame.quit()
 
 
 if __name__ == "__main__":
-    base_pygame()
+    if len(sys.argv) < 2:
+        print_error("Usage: python main.py <map_file>")
+    try:
+        base_pygame()
+    except Exception as e:
+        print_error(f"Runtime error: {e}")

@@ -8,8 +8,6 @@ try:
 except ModuleNotFoundError as err:
     print_error(f"{err}. Please install it using 'pip install pydantic'.")
 
-WINDOWSIZE: tuple[int, int] = (800, 800)
-
 
 class MapParser(BaseModel):
     nb_drones: int = Field(default=0)

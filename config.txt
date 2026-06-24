@@ -1,15 +1,69 @@
-nb_drones: 5
-start_hub: hub 0 0
+# # Custom Map: The Gauntlet
+# nb_drones: 8
+# 
+# start_hub: base 0 0 [color=green max_drones=8]
+# 
+# # Entry split
+# hub: gate_a 1 1 [color=orange max_drones=2]
+# hub: gate_b 1 -1 [color=orange max_drones=2]
+# 
+# # Middle section
+# hub: cross_a 2 2 [zone=restricted color=purple max_drones=2]
+# hub: cross_b 2 0 [color=blue max_drones=2]
+# hub: cross_c 2 -2 [zone=restricted color=purple max_drones=2]
+# 
+# # Priority express lane
+# hub: express 3 0 [zone=priority color=cyan max_drones=3]
+# 
+# # Bottleneck
+# hub: neck 4 0 [color=red max_drones=1]
+# 
+# # Exit split
+# hub: exit_a 5 1 [color=yellow max_drones=2]
+# hub: exit_b 5 -1 [color=yellow max_drones=2]
+# 
+# # Final merge
+# hub: merge 6 0 [color=magenta max_drones=4]
+# 
+# end_hub: goal 7 0 [color=gold max_drones=8]
+# 
+# # Entry connections
+# connection: base-gate_a
+# connection: base-gate_b
+# 
+# # Middle connections
+# connection: gate_a-cross_a
+# connection: gate_a-cross_b
+# connection: gate_b-cross_b
+# connection: gate_b-cross_c
+# 
+# # Converge to express
+# connection: cross_a-express
+# connection: cross_b-express
+# connection: cross_c-express
+# 
+# # Bottleneck
+# connection: express-neck
+# 
+# # Exit split
+# connection: neck-exit_a
+# connection: neck-exit_b
+# 
+# # Final merge
+# connection: exit_a-merge
+# connection: exit_b-merge
+# connection: merge-goal
+# Easy Level 2: Simple fork with two paths
+nb_drones: 3
 
-end_hub: goal 10 10
-hub: roof1 3 4 [zone=restricted color=white]
-hub: roof2 6 2 [zone=normal color=red]
-hub: corridorA 4 3 [zone=priority max_drones=2]
-hub: tunnelB 7 4 [zone=normal]
-hub: obstacleX 5 5 [zone=blocked]
-connection: hub-roof1
-connection: hub-corridorA
-connection: roof1-roof2
-connection: roof2-goal
-connection: corridorA-tunnelB [max_link_capacity=2]
-connection: tunnelB-goal
+start_hub: start 0 0 [color=green]
+hub: junction 1 0 [color=yellow max_drones=2]
+hub: path_a 2 1 [color=blue]
+hub: priority_path 2 -1 [color=green zone=priority]
+end_hub: goal 3 0 [color=red max_drones=3]
+
+connection: start-junction
+connection: junction-path_a
+connection: junction-priority_path
+connection: path_a-goal
+connection: priority_path-goal

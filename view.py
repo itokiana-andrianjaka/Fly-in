@@ -66,7 +66,7 @@ class View(BaseModel):
         # 2. ÉLOIGNEMENT AUTOMATIQUE : Si les zones sont trop proches
         # (ex: écart total < 5 unités)
         if world_width < 5 or world_height < 5:
-            self.scale = 120.0  # On augmente le scale pour forcer un
+            self.scale = 130.0  # On augmente le scale pour forcer un
             # écartement propre en pixels
         else:
             self.scale = 60.0  # scale standard par défaut

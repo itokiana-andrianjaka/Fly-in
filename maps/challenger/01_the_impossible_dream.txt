@@ -85,7 +85,7 @@ hub: final_torture4 19 0 [color=crimson max_drones=1]
 hub: final_torture5 20 0 [color=crimson max_drones=1]
 
 # The ultimate goal
-end_hub: impossible_goal 21 0 [color=black max_drones=25]
+end_hub: impossible_goal 21 0 [color=rainbow max_drones=25]
 
 # === CONNECTIONS: The Web of Suffering ===
 

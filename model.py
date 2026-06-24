@@ -8,7 +8,7 @@ try:
 except ModuleNotFoundError as err:
     print_error(f"{err}. Please install it using 'pip install pydantic'.")
 
-WINDOW_SIZE: tuple[int, int] = (1000, 900)
+WINDOW_SIZE: tuple[int, int] = (1200, 800)
 
 
 class ZoneType(Enum):

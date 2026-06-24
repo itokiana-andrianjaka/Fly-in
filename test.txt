@@ -1,7 +1,7 @@
 nb_drones: 1
 
 start_hub: start 0 0
-hub: a 1 1
+hub: a 1 1 [color=black]
 hub: b 2 0
 hub: c 0 -1
 end_hub: goal 2 4
