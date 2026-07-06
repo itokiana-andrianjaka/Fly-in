@@ -2,7 +2,7 @@ import sys
 
 from error import print_error
 from view import View
-from model import Zone, Connection, ZoneType
+from model import Zone, Connection
 from collections.abc import Callable
 from drone import Drone
 
@@ -19,12 +19,7 @@ def draw_connections(
     zones: dict[str, Zone],
     connections: list[Connection],
 ) -> None:
-    """
-    Dessine une ligne entre chaque paire de zones connectées.
-    Si l'une des deux zones est restricted, un point rouge est dessiné
-    au milieu de la liaison pour signaler le coût supplémentaire.
-    La taille du point varie avec le scale de la caméra.
-    """
+    """Dessine une ligne entre chaque paire de zones connectées."""
     for connection in connections:
         first_zone = zones[connection.first_zone]
         second_zone = zones[connection.second_zone]
@@ -37,23 +32,6 @@ def draw_connections(
         )
 
         pygame.draw.line(screen, pygame.Color("black"), point1, point2, 2)
-
-        # Vérifie si l'une des deux zones est restricted
-        is_restricted = (
-            first_zone.zone_type == ZoneType.RESTRICTED
-            or second_zone.zone_type == ZoneType.RESTRICTED
-        )
-
-        if is_restricted:
-            # Calcul du milieu de la liaison en pixels
-            mid_x = (point1[0] + point2[0]) // 2
-            mid_y = (point1[1] + point2[1]) // 2
-
-            # Cercle rouge avec contour noir pour la lisibilité
-            pygame.draw.circle(
-                screen, pygame.Color("black"), (mid_x, mid_y), 10
-            )
-            pygame.draw.circle(screen, pygame.Color("blue"), (mid_x, mid_y), 8)
 
 
 def create_zones_drawer() -> (
