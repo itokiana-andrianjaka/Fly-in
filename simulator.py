@@ -1,6 +1,9 @@
 # Fichier: simulator.py
 """Moteur de génération et d'exécution des étapes de la simulation."""
 
+from typing import Optional
+
+
 class TurnLog:
     """
     Cette classe existe pour formater et regrouper textuellement l'ensemble
@@ -12,7 +15,8 @@ class TurnLog:
         self.moves: list[str] = []
 
     def add_move(self, drone_id: int, target: str) -> None:
-        """Ajoute un déplacement respectant scrupuleusement le format attendu."""
+        """Ajoute un déplacement respectant scrupuleusement le format
+        attendu."""
         self.moves.append(f"D{drone_id}-{target}")
 
     def render(self) -> str:
@@ -42,7 +46,8 @@ class Simulator:
         self.turn_logs: list[TurnLog] = []
 
     def run(self) -> list[TurnLog]:
-        """Parcourt la planification temporelle pour générer les rapports de chaque tour."""
+        """Parcourt la planification temporelle pour générer les rapports
+        de chaque tour."""
         # Trouver la durée maximale de la simulation planifiée
         max_turns = 0
         for path in self.drone_paths:
@@ -75,7 +80,8 @@ class Simulator:
                     prev_zone = previous_step[1]
                     prev_conn = previous_step[2]
 
-                    # Si la zone ou la connexion a changé par rapport au tour précédent
+                    # Si la zone ou la connexion a changé par rapport au
+                    # tour précédent
                     if curr_zone != prev_zone or curr_conn != prev_conn:
                         if curr_conn is not None:
                             log.add_move(drone_id, curr_conn)

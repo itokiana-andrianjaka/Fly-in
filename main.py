@@ -1,5 +1,8 @@
 # Fichier: main.py
-"""Point d'entrée principal pour l'exécution graphique et textuelle du projet Fly-in."""
+"""
+Point d'entrée principal pour l'exécution
+graphique et textuelle du projet Fly-in.
+"""
 
 import sys
 from pathlib import Path
@@ -21,7 +24,9 @@ except ModuleNotFoundError as er:
 
 
 def run_simulation() -> None:
-    """Calcule les chemins spatio-temporels et affiche les lignes de log requises."""
+    """
+    Calcule les chemins spatio-temporels et affiche les lignes de log requises.
+    """
     conf = get_conf()
 
     pathfinder = Pathfinder(
@@ -63,25 +68,23 @@ def run_pygame() -> None:
     base_dir = Path(__file__).resolve().parent
     image_files = {
         "background": base_dir / "background.png",
-        "drone":      base_dir / "first_drone.png",
-        "zone":       base_dir / "zone.png",
+        "drone": base_dir / "first_drone.png",
+        "zone": base_dir / "zone.png",
     }
-    
+
     for name, path in image_files.items():
         if not path.exists():
             print_error(f"Missing image file: {path.name}")
 
     background = pygame.transform.scale(
         pygame.image.load(str(image_files["background"])).convert_alpha(),
-        WINDOW_SIZE
+        WINDOW_SIZE,
     )
     small_drone = pygame.transform.scale(
-        pygame.image.load(str(image_files["drone"])).convert_alpha(),
-        (95, 95)
+        pygame.image.load(str(image_files["drone"])).convert_alpha(), (95, 95)
     )
     small_zone = pygame.transform.scale(
-        pygame.image.load(str(image_files["zone"])).convert_alpha(),
-        (100, 70)
+        pygame.image.load(str(image_files["zone"])).convert_alpha(), (100, 70)
     )
 
     conf = get_conf()
@@ -98,7 +101,7 @@ def run_pygame() -> None:
         end=conf["end_zone"],
         nb_drones=nb_drones,
     )
-    
+
     if not drone_paths or len(drone_paths[0]) == 0:
         print_error("No valid path could be found to the destination.")
         return
@@ -113,10 +116,14 @@ def run_pygame() -> None:
     # --- Initialisation des drones visuels Pygame ---
     drones: list[Drone] = []
     for _ in range(nb_drones):
-        drones.append(Drone(position=(
-            float(start_zone.coordinate_x),
-            float(start_zone.coordinate_y),
-        )))
+        drones.append(
+            Drone(
+                position=(
+                    float(start_zone.coordinate_x),
+                    float(start_zone.coordinate_y),
+                )
+            )
+        )
 
     # Suivi logique de la position des drones pour l'affichage Pygame
     drone_zone_tracking: list[str] = [start_name] * nb_drones
@@ -126,7 +133,7 @@ def run_pygame() -> None:
     coordinates_list = []
     for z in zones.values():
         coordinates_list.append((z.coordinate_x, z.coordinate_y))
-        
+
     view.best_view(
         coordinates_list,
         (start_zone.coordinate_x, start_zone.coordinate_y),
@@ -162,7 +169,8 @@ def run_pygame() -> None:
         if animation_started and current_log_index < len(logs):
             any_moving = any(drone.is_moving for drone in drones)
 
-            # On attend l'arrêt complet de tous les drones avant de lire le tour suivant
+            # On attend l'arrêt complet de
+            # tous les drones avant de lire le tour suivant
             if not any_moving:
                 log = logs[current_log_index]
 
@@ -172,49 +180,71 @@ def run_pygame() -> None:
                     # Chercher s'il y a une action pour ce drone sur ce tour
                     move = next(
                         (m for m in log.moves if m.startswith(drone_id + "-")),
-                        None
+                        None,
                     )
 
                     if move is None:
                         continue
 
-                    # Récupération de la cible brute (soit une zone, soit un lien)
+                    # Récupération de la cible brute
+                    # (soit une zone, soit un lien)
                     destination = move.split("-")[1]
 
-                    # 1. CAS DU TOUR 1 DE ZONE RESTREINTE (Exemple de log : D1-A_B)
+                    # 1. CAS DU TOUR 1 DE ZONE RESTREINTE
+                    # (Exemple de log : D1-A_B)
                     if destination not in zones:
-                        path = drone_paths[drone_index]
+                        drone_path = drone_paths[drone_index]
                         current = drone_zone_tracking[drone_index]
-                        
-                        # Retrouver la vraie zone de destination finale dans son chemin théorique
-                        next_zone_name = None
-                        for j, step in enumerate(path):
-                            if step == current and j + 1 < len(path):
-                                next_zone_name = path[j + 1]
+
+                        # Retrouver la vraie zone de destination finale
+                        # dans son chemin théorique
+                        next_zone_name: str | None = None
+                        for j, step in enumerate(drone_path):
+                            zone_name = step[1]
+                            if (
+                                zone_name == current
+                                and j + 1 < len(drone_path)
+                            ):
+                                next_zone_name = drone_path[j + 1][1]
                                 break
 
-                        if next_zone_name in zones:
+                        if (
+                            next_zone_name is not None
+                            and next_zone_name in zones
+                        ):
                             current_zone = zones[current]
                             target_zone = zones[next_zone_name]
 
-                            # Calcul des coordonnées géométriques du milieu du lien
-                            mid_x = (float(current_zone.coordinate_x) + float(target_zone.coordinate_x)) / 2.0
-                            mid_y = (float(current_zone.coordinate_y) + float(target_zone.coordinate_y)) / 2.0
-                            
-                            # On envoie le drone s'arrêter au milieu pour ce premier tour
+                            # Calcul des coordonnées géométriques du
+                            # milieu du lien
+                            mid_x = (
+                                float(current_zone.coordinate_x)
+                                + float(target_zone.coordinate_x)
+                            ) / 2.0
+                            mid_y = (
+                                float(current_zone.coordinate_y)
+                                + float(target_zone.coordinate_y)
+                            ) / 2.0
+
+                            # On envoie le drone s'arrêter au milieu
+                            # pour ce premier tour
                             drone.start_move((mid_x, mid_y))
-                            
-                            # On met à jour son tracking pour que le Tour 2 connaisse sa provenance
+
+                            # On met à jour son tracking pour que le
+                            # Tour 2 connaisse sa provenance
                             drone_zone_tracking[drone_index] = next_zone_name
 
-                    # 2. CAS DU TOUR 2 DE ZONE RESTREINTE OU ZONE STANDARD (1 tour direct)
+                    # 2. CAS DU TOUR 2 DE ZONE RESTREINTE OU
+                    # ZONE STANDARD (1 tour direct)
                     else:
                         if destination in zones:
                             target = zones[destination]
-                            drone.start_move((
-                                float(target.coordinate_x),
-                                float(target.coordinate_y),
-                            ))
+                            drone.start_move(
+                                (
+                                    float(target.coordinate_x),
+                                    float(target.coordinate_y),
+                                )
+                            )
                             drone_zone_tracking[drone_index] = destination
 
                 # Passage au tour de log suivant

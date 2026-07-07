@@ -1,0 +1,1096 @@
+┌─(~/Documents/Milestone_3/Fly-in)─────────────────(tiana-an@c1r11s9:pts/0)─┐
+└─(09:12:37 on main ✭)──> cat draw.py ; cat drone.py ; cat error.py ; cat get_conf.py ; cat main.py ; cat model.py ; cat parser.py ; cat simulator.py ; cat view.py
+import sys
+
+from error import print_error
+from view import View
+from model import Zone, Connection
+from collections.abc import Callable
+from drone import Drone
+
+try:
+    import pygame
+except ModuleNotFoundError as er:
+    print_error(str(er))
+    sys.exit(1)
+
+
+def draw_connections(
+    screen: pygame.Surface,
+    view: View,
+    zones: dict[str, Zone],
+    connections: list[Connection],
+) -> None:
+    """Dessine une ligne entre chaque paire de zones connectées."""
+    for connection in connections:
+        first_zone = zones[connection.first_zone]
+        second_zone = zones[connection.second_zone]
+
+        point1 = view.world_to_screen(
+            first_zone.coordinate_x, first_zone.coordinate_y
+        )
+        point2 = view.world_to_screen(
+            second_zone.coordinate_x, second_zone.coordinate_y
+        )
+
+        pygame.draw.line(screen, pygame.Color("black"), point1, point2, 2)
+
+
+def create_zones_drawer() -> (
+    Callable[[pygame.Surface, View, dict[str, Zone], pygame.Surface], None]
+):
+    color_rainbow = [
+        "Red",
+        "Orange",
+        "Blue",
+        "Yellow",
+        "Purple",
+        "Indigo",
+        "Green",
+    ]
+    last_color_rainbow = 0
+
+    def draw_zones(
+        screen: pygame.Surface,
+        view: View,
+        zones: dict[str, Zone],
+        zone_picture: pygame.Surface,
+    ) -> None:
+        """
+        Dessine chaque zone :
+        - L'image de la zone centrée sur sa position
+        - Le nom de la zone écrit au-dessus
+        """
+        half_w = zone_picture.get_width() // 2
+        half_h = zone_picture.get_height() // 2
+
+        for zone in zones.values():
+            cx, cy = view.world_to_screen(zone.coordinate_x, zone.coordinate_y)
+            picture = zone_picture.copy()
+
+            try:
+                if zone.color:
+                    color = pygame.Color(zone.color)
+                else:
+                    color = pygame.Color("white")
+
+            except ValueError:
+                if zone.color == "rainbow":
+                    nonlocal last_color_rainbow
+                    if last_color_rainbow >= 180:
+                        last_color_rainbow = 0
+                    else:
+                        last_color_rainbow += 1
+                    color = pygame.Color(
+                        color_rainbow[last_color_rainbow // 30]
+                    )
+                else:
+                    raise ValueError(f"Unknown color: {zone.color}")
+
+            picture.fill(color, special_flags=pygame.BLEND_RGB_MULT)
+            screen.blit(picture, (cx - half_w, cy - half_h))
+
+    return draw_zones
+
+
+def create_drone_drawer() -> (
+    Callable[[pygame.Surface, View, Drone, pygame.Surface, int], None]
+):
+    """
+    Crée un gestionnaire graphique capable de dessiner n'importe quel
+    drone de la flotte. Chaque drone reçoit une couleur distincte
+    basée sur son index dans la flotte.
+    """
+    drone_colors = [
+        "white",
+        "brown",
+        "saddlebrown",
+        "sienna",
+        "gray",
+        "dimgray",
+        "cyan",
+        "magenta",
+        "orange",
+        "lime",
+    ]
+
+    def draw_drone(
+        screen: pygame.Surface,
+        view: View,
+        drone: Drone,
+        drone_picture: pygame.Surface,
+        drone_index: int,
+    ) -> None:
+        half_w = drone_picture.get_width() // 2
+        half_h = drone_picture.get_height() // 2
+
+        # Évolution de la hauteur à chaque frame de l'instance du drone actuel
+        drone.current_height += drone.move
+
+        # Inversion de la direction si on atteint les limites (38 et 48)
+        if drone.current_height >= 48.0:
+            drone.move = -0.1
+        elif drone.current_height <= 38.0:
+            drone.move = 0.1
+
+        cx, cy = view.world_to_screen(drone.position[0], drone.position[1])
+        picture = drone_picture.copy()
+
+        # Couleur unique par drone grâce à son index dans la flotte
+        color_name = drone_colors[drone_index % len(drone_colors)]
+        color = pygame.Color(color_name)
+
+        picture.fill(color, special_flags=pygame.BLEND_RGBA_MULT)
+        screen.blit(
+            picture,
+            (cx - half_w, cy - half_h - int(drone.current_height) + 10),
+        )
+
+    return draw_drone
+
+
+def draw_edge(
+    screen: pygame.Surface, view: View, edge_picture: pygame.Surface
+) -> None:
+    """Dessine le edge pour le texte."""
+    pass
+import sys
+import random
+
+from error import print_error
+
+try:
+    from pydantic import BaseModel, Field
+except ModuleNotFoundError as er:
+    print_error(str(er))
+    sys.exit(1)
+
+
+class Drone(BaseModel):
+    """
+    Représente un drone capable de se déplacer en douceur entre deux
+    positions et de maintenir son animation d'oscillation et son chemin
+    de manière autonome.
+    """
+
+    # Position actuelle du drone en coordonnées logiques (pas en pixels)
+    position: tuple[float, float] = Field(default=(0.0, 0.0))
+
+    # Position de départ du mouvement en cours
+    start_pos: tuple[float, float] = Field(default=(0.0, 0.0))
+
+    # Position d'arrivée visée
+    target_pos: tuple[float, float] = Field(default=(0.0, 0.0))
+
+    # Progression du trajet de 0.0 (départ) à 1.0 (arrivée)
+    progress: float = Field(default=1.0)
+
+    # Vitesse de l'animation linéaire
+    animation_speed: float = Field(default=0.05, gt=0.0, le=1.0)
+
+    # --- Itinéraire propre à ce drone ---
+    path: list[str] = Field(default_factory=list)
+
+    # --- Liste de couleurs stables pour varier chaque drone ---
+    color_name: str = Field(
+        default_factory=lambda: random.choice(
+            [
+                "white",
+                "brown",
+                "saddlebrown",
+                "sienna",
+                "gray",
+                "dimgray",
+                "darkgray",
+                "lightgray",
+                "khaki",
+                "darkkhaki",
+            ]
+        )
+    )
+
+    # --- État de l'animation verticale propre à chaque drone ---
+    current_height: float = Field(default=43.0)
+    move: float = Field(default=0.1)
+
+    # Décalage aléatoire fixe pour éviter que les drones forment une queue
+    # Généré une seule fois à la création, jamais modifié ensuite
+    offset_x: float = Field(
+        default_factory=lambda: random.uniform(-0.1, 0.1)
+    )
+    offset_y: float = Field(
+        default_factory=lambda: random.uniform(-0.1, 0.1)
+    )
+
+    @property
+    def is_moving(self) -> bool:
+        """
+        Retourne True si le drone est en cours de déplacement entre deux zones.
+        """
+        return self.progress < 1.0
+
+    def start_move(self, target: tuple[float, float]) -> None:
+        """Démarre une animation de déplacement vers `target`."""
+        self.start_pos = self.position
+        self.target_pos = (float(target[0]), float(target[1]))
+        self.progress = 0.0
+
+    def update(self) -> None:
+        """Avance l'animation du drone d'un pas à chaque frame."""
+        # 1. Gestion du rebond de la chauve-souris autonome
+        self.current_height += self.move
+        if self.current_height >= 48.0:
+            self.move = -0.1
+        elif self.current_height <= 38.0:
+            self.move = 0.1
+
+        # 2. Gestion du déplacement linéaire (interpolation)
+        if self.progress < 1.0:
+            self.progress = min(1.0, self.progress + self.animation_speed)
+            start_x, start_y = self.start_pos
+            target_x, target_y = self.target_pos
+            new_x = start_x + (target_x - start_x) * self.progress
+            new_y = start_y + (target_y - start_y) * self.progress
+            self.position = (new_x, new_y)
+import sys
+
+COLORS = {"RED": "\033[31m", "YELLOW": "\033[33m", "BLUE": "\033[34m"}
+
+
+def print_error(msg: str) -> None:
+    print(f"{COLORS['RED']}\nCritical error: {msg}", file=sys.stderr)
+    print(f"{COLORS['YELLOW']}\nSafe automatic shutdown completed.\n")
+    sys.exit(1)
+import sys
+from pathlib import Path
+from typing import Any
+
+from parser import MapParser
+from error import print_error
+
+
+def get_conf() -> dict[str, Any]:
+    """Backward-compatible helper for simple scripts.
+
+    Reads `config.txt` located next to this module and returns a dict
+    with keys used by other modules (for example: 'nb_drones').
+    """
+    config_path = Path(__file__).resolve().parent / sys.argv[1]
+    parser = MapParser()
+    try:
+        parser.parsing_file(str(config_path))
+    except Exception as e:
+        print_error(str(e))
+
+    return {
+        "nb_drones": parser.nb_drones,
+        "zones": parser.zones,
+        "connections": parser.connections,
+        "start_zone": parser.start_zone_name,
+        "end_zone": parser.end_zone_name,
+    }
+# Fichier: main.py
+"""Point d'entrée principal pour l'exécution graphique et textuelle du projet Fly-in."""
+
+import sys
+from pathlib import Path
+
+from get_conf import get_conf
+from model import WINDOW_SIZE
+from error import print_error
+from view import View
+from drone import Drone
+from draw import draw_connections, create_drone_drawer, create_zones_drawer
+from pathfinder import Pathfinder
+from simulator import Simulator
+
+try:
+    import pygame
+except ModuleNotFoundError as er:
+    print_error(str(er))
+    sys.exit(1)
+
+
+def run_simulation() -> None:
+    """Calcule les chemins spatio-temporels et affiche les lignes de log requises."""
+    conf = get_conf()
+
+    pathfinder = Pathfinder(
+        zones=conf["zones"],
+        connections=conf["connections"],
+    )
+    drone_paths = pathfinder.assign_paths(
+        start=conf["start_zone"],
+        end=conf["end_zone"],
+        nb_drones=conf["nb_drones"],
+    )
+
+    if not drone_paths or len(drone_paths[0]) == 0:
+        print_error("No valid path could be found to the destination.")
+        return
+
+    simulator = Simulator(
+        start_zone=conf["start_zone"],
+        end_zone=conf["end_zone"],
+        drone_paths=drone_paths,
+    )
+    logs = simulator.run()
+
+    for log in logs:
+        print(log.render())
+
+    print(f"\nTotal turns: {len(logs)}")
+
+
+def run_pygame() -> None:
+    """Gère l'interface d'affichage graphique animée de Pygame."""
+    pygame.init()
+
+    screen = pygame.display.set_mode(WINDOW_SIZE)
+    pygame.display.set_caption("Fly-in")
+    clock = pygame.time.Clock()
+
+    # --- Chargement des images ---
+    base_dir = Path(__file__).resolve().parent
+    image_files = {
+        "background": base_dir / "background.png",
+        "drone":      base_dir / "first_drone.png",
+        "zone":       base_dir / "zone.png",
+    }
+    
+    for name, path in image_files.items():
+        if not path.exists():
+            print_error(f"Missing image file: {path.name}")
+
+    background = pygame.transform.scale(
+        pygame.image.load(str(image_files["background"])).convert_alpha(),
+        WINDOW_SIZE
+    )
+    small_drone = pygame.transform.scale(
+        pygame.image.load(str(image_files["drone"])).convert_alpha(),
+        (95, 95)
+    )
+    small_zone = pygame.transform.scale(
+        pygame.image.load(str(image_files["zone"])).convert_alpha(),
+        (100, 70)
+    )
+
+    conf = get_conf()
+    zones = conf["zones"]
+    connections = conf["connections"]
+    nb_drones = conf["nb_drones"]
+    start_name = conf["start_zone"]
+    start_zone = zones[start_name]
+
+    # --- Initialisation des trajectoires de simulation ---
+    pathfinder = Pathfinder(zones=zones, connections=connections)
+    drone_paths = pathfinder.assign_paths(
+        start=start_name,
+        end=conf["end_zone"],
+        nb_drones=nb_drones,
+    )
+    
+    if not drone_paths or len(drone_paths[0]) == 0:
+        print_error("No valid path could be found to the destination.")
+        return
+
+    simulator = Simulator(
+        start_zone=start_name,
+        end_zone=conf["end_zone"],
+        drone_paths=drone_paths,
+    )
+    logs = simulator.run()
+
+    # --- Initialisation des drones visuels Pygame ---
+    drones: list[Drone] = []
+    for _ in range(nb_drones):
+        drones.append(Drone(position=(
+            float(start_zone.coordinate_x),
+            float(start_zone.coordinate_y),
+        )))
+
+    # Suivi logique de la position des drones pour l'affichage Pygame
+    drone_zone_tracking: list[str] = [start_name] * nb_drones
+
+    # --- Configuration caméra ---
+    view = View()
+    coordinates_list = []
+    for z in zones.values():
+        coordinates_list.append((z.coordinate_x, z.coordinate_y))
+        
+    view.best_view(
+        coordinates_list,
+        (start_zone.coordinate_x, start_zone.coordinate_y),
+    )
+
+    draw_zones = create_zones_drawer()
+    draw_drone = create_drone_drawer()
+
+    running = True
+    animation_started = False
+    current_log_index = 0
+
+    # ==========================================================================
+    # BOUCLE PRINCIPALE PYGAME
+    # ==========================================================================
+    while running:
+        for drone in drones:
+            drone.update()
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_q:
+                    running = False
+                elif event.key == pygame.K_a:
+                    animation_started = not animation_started
+            view.handle_event(event)
+
+        view.camera()
+
+        # --- Interprétation et animation pas à pas du log de simulation ---
+        if animation_started and current_log_index < len(logs):
+            any_moving = any(drone.is_moving for drone in drones)
+
+            # On attend l'arrêt complet de tous les drones avant de lire le tour suivant
+            if not any_moving:
+                log = logs[current_log_index]
+
+                for drone_index, drone in enumerate(drones):
+                    drone_id = f"D{drone_index + 1}"
+
+                    # Chercher s'il y a une action pour ce drone sur ce tour
+                    move = next(
+                        (m for m in log.moves if m.startswith(drone_id + "-")),
+                        None
+                    )
+
+                    if move is None:
+                        continue
+
+                    # Récupération de la cible brute (soit une zone, soit un lien)
+                    destination = move.split("-")[1]
+
+                    # 1. CAS DU TOUR 1 DE ZONE RESTREINTE (Exemple de log : D1-A_B)
+                    if destination not in zones:
+                        path = drone_paths[drone_index]
+                        current = drone_zone_tracking[drone_index]
+                        
+                        # Retrouver la vraie zone de destination finale dans son chemin théorique
+                        next_zone_name = None
+                        for j, step in enumerate(path):
+                            if step == current and j + 1 < len(path):
+                                next_zone_name = path[j + 1]
+                                break
+
+                        if next_zone_name in zones:
+                            current_zone = zones[current]
+                            target_zone = zones[next_zone_name]
+
+                            # Calcul des coordonnées géométriques du milieu du lien
+                            mid_x = (float(current_zone.coordinate_x) + float(target_zone.coordinate_x)) / 2.0
+                            mid_y = (float(current_zone.coordinate_y) + float(target_zone.coordinate_y)) / 2.0
+                            
+                            # On envoie le drone s'arrêter au milieu pour ce premier tour
+                            drone.start_move((mid_x, mid_y))
+                            
+                            # On met à jour son tracking pour que le Tour 2 connaisse sa provenance
+                            drone_zone_tracking[drone_index] = next_zone_name
+
+                    # 2. CAS DU TOUR 2 DE ZONE RESTREINTE OU ZONE STANDARD (1 tour direct)
+                    else:
+                        if destination in zones:
+                            target = zones[destination]
+                            drone.start_move((
+                                float(target.coordinate_x),
+                                float(target.coordinate_y),
+                            ))
+                            drone_zone_tracking[drone_index] = destination
+
+                # Passage au tour de log suivant
+                current_log_index = current_log_index + 1
+
+        # --- Phase de rendu graphique ---
+        screen.fill(pygame.Color("lightblue"))
+        screen.blit(background, (0, 0))
+        draw_connections(screen, view, zones, connections)
+        draw_zones(screen, view, zones, small_zone)
+
+        for index, drone in enumerate(drones):
+            saved_pos = drone.position
+            offset = index - (nb_drones / 2)
+            drone.position = (
+                saved_pos[0] + offset / view.scale,
+                saved_pos[1] + offset / view.scale,
+            )
+            draw_drone(screen, view, drone, small_drone, index)
+            drone.position = saved_pos
+
+        clock.tick(60)
+        pygame.display.flip()
+
+    pygame.quit()
+
+
+if __name__ == "__main__":
+    try:
+        run_simulation()
+        run_pygame()
+    except Exception as e:
+        print_error(f"Runtime error: {e}")from enum import Enum
+from typing import Optional
+
+from error import print_error
+
+try:
+    from pydantic import BaseModel, Field, model_validator
+except ModuleNotFoundError as err:
+    print_error(f"{err}. Please install it using 'pip install pydantic'.")
+
+WINDOW_SIZE: tuple[int, int] = (1200, 800)
+
+
+class ZoneType(Enum):
+    NORMAL = "normal"
+    BLOCKED = "blocked"
+    RESTRICTED = "restricted"
+    PRIORITY = "priority"
+
+
+class Zone(BaseModel):
+    name: str = Field()
+    coordinate_x: int = Field()
+    coordinate_y: int = Field()
+    zone_type: ZoneType = Field(default=ZoneType.NORMAL)
+    color: Optional[str] = Field(default=None)
+    max_drones: int = Field(ge=1, default=1)
+
+    @model_validator(mode='after')
+    def _validate(self) -> 'Zone':
+        if '-' in self.name or ' ' in self.name:
+            raise ValueError(
+                f"The zone name '{self.name}' "
+                "must not contain hyphens or spaces."
+            )
+        return self
+
+
+class Connection(BaseModel):
+    first_zone: str = Field()
+    second_zone: str = Field()
+    max_link_capacity: int = Field(ge=1, default=1)
+
+    @model_validator(mode='after')
+    def _validate(self) -> 'Connection':
+        if self.first_zone == self.second_zone:
+            raise ValueError(
+                f"An area cannot be connected to itself ('{self.first_zone}')."
+            )
+        return self
+from error import print_error
+import re
+from typing import Optional
+from model import Zone, Connection, ZoneType
+
+try:
+    from pydantic import BaseModel, Field, ValidationError
+except ModuleNotFoundError as err:
+    print_error(f"{err}. Please install it using 'pip install pydantic'.")
+
+
+class MapParser(BaseModel):
+    nb_drones: int = Field(default=0)
+    zones: dict[str, Zone] = {}
+    connections: list[Connection] = []
+    start_zone_name: str = Field(default="")
+    end_zone_name: str = Field(default="")
+
+    def _process_nb_drones(self, value: str, line_num: int) -> None:
+        try:
+            val_int = int(value)
+            if val_int <= 0:
+                raise ValueError()
+            self.nb_drones = val_int
+        except ValueError:
+            raise ValueError(
+                f"Line {line_num}: 'nb_drones' must be "
+                "a positive integer (received: '{value}')."
+            )
+
+    def _process_hub(self, key: str, value: str, line_num: int) -> None:
+        metadata_str = ""
+        metadata_match = re.search(r"\[(.*)\]", value)
+
+        if metadata_match:
+            metadata_str = metadata_match.group(1)
+            value = value.split("[")[0].strip()
+
+        tokens = value.split()
+        if len(tokens) != 3:
+            raise ValueError(
+                f"Line {line_num}: A hub must have a name and XY coordinates."
+            )
+
+        name, x_str, y_str = tokens
+
+        if name in self.zones:
+            raise ValueError(
+                f"Line {line_num}: The '{name}' area is already defined."
+            )
+
+        try:
+            x = int(x_str)
+            y = int(y_str)
+        except ValueError:
+            raise ValueError(
+                f"Line {line_num}: X and Y coordinates must be integers."
+            )
+
+        zone_type = ZoneType.NORMAL
+        color: Optional[str] = None
+
+        # Si c'est le départ ou l'arrivée,
+        # la capacité par défaut s'adapte au nombre de drones
+        if key in ("start_hub", "end_hub"):
+            max_drones = self.nb_drones if self.nb_drones > 0 else 1
+        else:
+            max_drones = 1
+
+        if metadata_str:
+            tags = metadata_str.split()
+            for tag in tags:
+                if "=" not in tag:
+                    raise ValueError(
+                        f"Line {line_num}: Invalid metadata '{tag}'."
+                    )
+
+                info_key, info_val = tag.split("=", 1)
+                info_key, info_val = info_key.strip(), info_val.strip()
+
+                if info_key == "zone":
+                    try:
+                        zone_type = ZoneType(info_val)
+                    except ValueError:
+                        raise ValueError(
+                            f"Line {line_num}: Unknown zone type '{info_val}'."
+                        )
+                elif info_key == "color":
+                    color = info_val
+                elif info_key == "max_drones":
+                    try:
+                        max_drones = int(info_val)
+                    except ValueError:
+                        raise ValueError(
+                            f"Line {line_num}: "
+                            "'max_drones' must be a positive integer."
+                        )
+
+        if key == "start_hub":
+            if self.start_zone_name:
+                raise ValueError(
+                    f"Line {line_num}: 'start_hub' can only be defined once."
+                )
+            self.start_zone_name = name
+        elif key == "end_hub":
+            if self.end_zone_name:
+                raise ValueError(
+                    f"Line {line_num}: 'end_hub' can only be defined once."
+                )
+            self.end_zone_name = name
+
+        # Interception des erreurs de contraintes de Pydantic (ex: ge=0, gt=1)
+        try:
+            self.zones[name] = Zone(
+                name=name, coordinate_x=x, coordinate_y=y,
+                zone_type=zone_type, color=color, max_drones=max_drones
+            )
+        except ValidationError as e:
+            # Récupère le message d'erreur simplifié de Pydantic
+            raw_msg = e.errors()[0]['msg']
+            raise ValueError(
+                f"Line {line_num}: "
+                f"Validation failed for Hub '{name}' -> {raw_msg}"
+            )
+
+    def _process_connection(self, value: str, line_num: int) -> None:
+        metadata_str = ""
+        metadata_match = re.search(r"\[(.*)\]", value)
+        if metadata_match:
+            metadata_str = metadata_match.group(1)
+            value = value.split("[")[0].strip()
+
+        if "-" not in value:
+            raise ValueError(
+                f"Line {line_num}: Invalid connection "
+                "(must use a hyphen, e.g.: zoneA-zoneB)."
+            )
+
+        parts = value.split("-")
+        if len(parts) != 2:
+            raise ValueError(
+                f"Line {line_num}: Connection must have exactly one hyphen."
+            )
+
+        z1, z2 = parts[0].strip(), parts[1].strip()
+
+        if z1 not in self.zones or z2 not in self.zones:
+            raise ValueError(
+                f"Line {line_num}: Connection impossible, "
+                f"one or both of the zones ('{z1}' or '{z2}') does not exist."
+            )
+
+        max_link_capacity = 1
+        if metadata_str:
+            tags = metadata_str.split()
+            for tag in tags:
+                if "=" not in tag:
+                    raise ValueError(
+                        f"Line {line_num}: "
+                        f"Invalid connection metadata '{tag}'."
+                    )
+
+                info_key, info_val = tag.split("=", 1)
+                if info_key.strip() == "max_link_capacity":
+                    try:
+                        max_link_capacity = int(info_val.strip())
+                    except ValueError:
+                        raise ValueError(
+                            f"Line {line_num}: "
+                            "'max_link_capacity' must be a positive integer."
+                        )
+
+        try:
+            self.connections.append(Connection(
+                first_zone=z1, second_zone=z2,
+                max_link_capacity=max_link_capacity
+                )
+            )
+        except ValidationError as e:
+            raw_msg = e.errors()[0]['msg']
+            raise ValueError(
+                f"Line {line_num}: "
+                f"Validation failed for connection -> {raw_msg}"
+            )
+
+    def parsing_file(self, file_path: str) -> None:
+        try:
+            with open(file_path, "r") as file:
+                done_first_line = 0
+                for line_number, line in enumerate(file, 1):
+                    if not line.strip() or line.strip()[0] == '#':
+                        continue
+
+                    if ":" not in line:
+                        raise ValueError(f"Line {line_number}: missing ':'")
+
+                    parts = line.split(":")
+                    if len(parts) != 2:
+                        raise ValueError(
+                            f"Line {line_number}: ':' syntax error"
+                        )
+
+                    key = parts[0].strip()
+                    value = parts[1].strip()
+
+                    if key == "nb_drones" and not done_first_line:
+                        self._process_nb_drones(value, line_number)
+                        done_first_line = 1
+                    elif (
+                        key in ("start_hub", "end_hub", "hub")
+                        and done_first_line
+                    ):
+                        self._process_hub(key, value, line_number)
+                    elif key == "connection" and done_first_line:
+                        self._process_connection(value, line_number)
+                    else:
+                        if key == "nb_drones":
+                            raise ValueError(
+                                f"Line {line_number}: The number of drones is "
+                                "defined several times."
+                            )
+
+                        elif done_first_line:
+                            raise ValueError(
+                                f"Line {line_number}: Unknown prefix '{key}'"
+                            )
+                        else:
+                            raise ValueError(
+                                "The first line must be the number of drone"
+                            )
+
+            # Validations globales de fin de fichier
+            if self.nb_drones <= 0:
+                raise ValueError(
+                    "Global configuration error: "
+                    "'nb_drones' configuration is missing or invalid."
+                )
+            if not self.start_zone_name:
+                raise ValueError(
+                    "Global configuration error: "
+                    "'start_hub' configuration is missing."
+                )
+            if not self.end_zone_name:
+                raise ValueError(
+                    "Global configuration error: "
+                    "'end_hub' configuration is missing."
+                )
+
+            # Vérification de sécurité croisée :
+            # nb_drones vs max_drones de départ
+            if self.zones[self.start_zone_name].max_drones < self.nb_drones:
+                raise ValueError(
+                    "Global logic error: The start_hub "
+                    f"'{self.start_zone_name}' capacity "
+                    f"({self.zones[self.start_zone_name].max_drones}) is lower"
+                    f" than the total number of drones ({self.nb_drones})."
+                )
+
+        except FileNotFoundError:
+            print_error(f"The '{file_path}' file could not be found.")
+        except ValueError as e:
+            print_error(f"Parsing - {e}")
+# Fichier: simulator.py
+"""Moteur de génération et d'exécution des étapes de la simulation."""
+
+class TurnLog:
+    """
+    Cette classe existe pour formater et regrouper textuellement l'ensemble
+    des mouvements effectués par les drones durant un tour précis.
+    """
+
+    def __init__(self, turn_number: int) -> None:
+        self.turn_number = turn_number
+        self.moves: list[str] = []
+
+    def add_move(self, drone_id: int, target: str) -> None:
+        """Ajoute un déplacement respectant scrupuleusement le format attendu."""
+        self.moves.append(f"D{drone_id}-{target}")
+
+    def render(self) -> str:
+        """Génère la ligne finale de texte pour le terminal."""
+        return " ".join(self.moves)
+
+    def is_empty(self) -> bool:
+        """Indique si aucun drone n'a bougé durant ce tour."""
+        return len(self.moves) == 0
+
+
+class Simulator:
+    """
+    Cette classe existe pour lire les trajectoires planifiées sans conflits
+    par le Pathfinder et générer l'historique complet des tours de simulation.
+    """
+
+    def __init__(
+        self,
+        start_zone: str,
+        end_zone: str,
+        drone_paths: list[list[tuple[int, str, Optional[str]]]],
+    ) -> None:
+        self.start_zone = start_zone
+        self.end_zone = end_zone
+        self.drone_paths = drone_paths
+        self.turn_logs: list[TurnLog] = []
+
+    def run(self) -> list[TurnLog]:
+        """Parcourt la planification temporelle pour générer les rapports de chaque tour."""
+        # Trouver la durée maximale de la simulation planifiée
+        max_turns = 0
+        for path in self.drone_paths:
+            if len(path) > 0:
+                last_step = path[len(path) - 1]
+                if last_step[0] > max_turns:
+                    max_turns = last_step[0]
+
+        # Générer l'état de chaque tour séquentiellement
+        for turn in range(1, max_turns + 1):
+            log = TurnLog(turn_number=turn)
+
+            for drone_index in range(len(self.drone_paths)):
+                path = self.drone_paths[drone_index]
+                drone_id = drone_index + 1
+
+                # Trouver l'état du drone à ce tour précis et au tour précédent
+                current_step = None
+                previous_step = None
+
+                for step in path:
+                    if step[0] == turn:
+                        current_step = step
+                    elif step[0] == turn - 1:
+                        previous_step = step
+
+                if current_step is not None and previous_step is not None:
+                    curr_zone = current_step[1]
+                    curr_conn = current_step[2]
+                    prev_zone = previous_step[1]
+                    prev_conn = previous_step[2]
+
+                    # Si la zone ou la connexion a changé par rapport au tour précédent
+                    if curr_zone != prev_zone or curr_conn != prev_conn:
+                        if curr_conn is not None:
+                            log.add_move(drone_id, curr_conn)
+                        else:
+                            log.add_move(drone_id, curr_zone)
+                    elif prev_conn is not None and curr_conn is None:
+                        # Fin de transit d'une zone restreinte
+                        log.add_move(drone_id, curr_zone)
+
+            if not log.is_empty():
+                self.turn_logs.append(log)
+
+        return self.turn_logsimport sys
+
+from error import print_error
+from model import WINDOW_SIZE
+
+try:
+    import pygame
+    from pydantic import BaseModel, Field
+except ModuleNotFoundError as er:
+    print_error(str(er))
+    sys.exit(1)
+
+
+class View(BaseModel):
+    """
+    Gère le décalage (offset) de tout l'affichage pour permettre de scroller.
+
+    Le principe :
+    - Toutes les positions "logiques" (coordonnées du fichier config)
+      sont converties en pixels via world_to_screen().
+    - world_to_screen() ajoute simplement l'offset à la position.
+    - Quand l'utilisateur fait glisser la souris (clic gauche maintenu),
+      on modifie l'offset -> tout l'affichage se déplace.
+    - Au démarrage, on calcule un offset qui centre la carte si elle
+      est plus petite que la fenêtre.
+    """
+
+    scale: float = Field(default=60.0, gt=0.0)  # float au lieu de int
+    offset_x: float = Field(default=0.0)
+    offset_y: float = Field(default=0.0)
+
+    # True si l'utilisateur maintient le clic gauche pour faire glisser la vue
+    dragging: bool = Field(default=False)
+
+    # Dernière position connue de la souris (pour calculer le déplacement)
+    last_mouse_pos: tuple[int, int] = Field(default=(0, 0))
+
+    def best_view(
+        self,
+        zones_positions: list[tuple[int, int]],
+        start_zone_pos: tuple[int, int],
+    ) -> None:
+        """
+        Calcule l'offset et ajuste le scale initial :
+        - Écarte automatiquement les zones si la map est trop serrée/petite.
+        - Centre globalement si toute la carte tient dans la fenêtre.
+        - Centre uniquement sur le START si la carte déborde.
+        """
+        if not zones_positions:
+            return
+
+        # 1. On trouve les bornes extrêmes de la carte
+        min_x = min(pos[0] for pos in zones_positions)
+        max_x = max(pos[0] for pos in zones_positions)
+        min_y = min(pos[1] for pos in zones_positions)
+        max_y = max(pos[1] for pos in zones_positions)
+
+        world_width = max_x - min_x
+        world_height = max_y - min_y
+
+        if world_width == 0:
+            world_width = 1
+        if world_height == 0:
+            world_height = 1
+
+        # 2. ÉLOIGNEMENT AUTOMATIQUE : Si les zones sont trop proches
+        # (ex: écart total < 5 unités)
+        if world_width < 5 or world_height < 5:
+            self.scale = 130.0  # On augmente le scale pour forcer un
+            # écartement propre en pixels
+        else:
+            self.scale = 60.0  # scale standard par défaut
+
+        # 3. Calcul de la taille de rendu réelle occupée en pixels
+        map_width_pixels = world_width * self.scale
+        map_height_pixels = world_height * self.scale
+
+        # 4. CHOIX DU CENTRAGE : Est-ce que la carte déborde de l'écran ?
+        if (
+            map_width_pixels > WINDOW_SIZE[0]
+            or map_height_pixels > WINDOW_SIZE[1]
+        ):
+            # LA MAP EST TROP GRANDE ->
+            # Focus immédiat au centre sur le hub de START
+            start_x, start_y = start_zone_pos
+            self.offset_x = (WINDOW_SIZE[0] / 2) - (start_x * self.scale) - 400
+            self.offset_y = (WINDOW_SIZE[1] / 2) - (start_y * self.scale) - 100
+            # decalage pour une meilleur visualisation
+        else:
+            # LA MAP TIENT DEDANS ->
+            # On la centre globalement au milieu de l'écran
+            center_world_x = (min_x + max_x) * self.scale / 2
+            center_world_y = (min_y + max_y) * self.scale / 2
+            self.offset_x = (WINDOW_SIZE[0] / 2) - center_world_x
+            self.offset_y = (WINDOW_SIZE[1] / 2) - center_world_y
+
+    def handle_event(self, event: pygame.event.Event) -> None:
+        """
+        À appeler pour chaque événement pygame.
+        Gère le clic gauche maintenu pour faire glisser la vue.
+        """
+        # Clic gauche enfoncé -> on commence à "attraper" la vue
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            self.dragging = True
+            self.last_mouse_pos = pygame.mouse.get_pos()
+
+        # Clic gauche relâché -> on arrête de bouger la vue
+        elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+            self.dragging = False
+
+        # Souris en mouvement pendant le clic -> on déplace la vue
+        elif event.type == pygame.MOUSEMOTION and self.dragging:
+            mouse_x, mouse_y = pygame.mouse.get_pos()
+            last_x, last_y = self.last_mouse_pos
+
+            self.offset_x += mouse_x - last_x
+            self.offset_y += mouse_y - last_y
+
+            self.last_mouse_pos = (mouse_x, mouse_y)
+
+    def camera(self) -> None:
+        """
+        À appeler à chaque frame dans la boucle principale
+        (pas dans les événements).
+        Gère le défilement continu tant qu'une
+        touche directionnelle est maintenue.
+        """
+        keys = pygame.key.get_pressed()
+        scroll_speed_pxl = 10
+        # Vitesse par frame (ajuste cette valeur à ta guise !)
+
+        if keys[pygame.K_LEFT]:
+            self.offset_x += scroll_speed_pxl
+        if keys[pygame.K_RIGHT]:
+            self.offset_x -= scroll_speed_pxl
+        if keys[pygame.K_UP]:
+            self.offset_y += scroll_speed_pxl
+        if keys[pygame.K_DOWN]:
+            self.offset_y -= scroll_speed_pxl
+
+    def world_to_screen(
+        self, world_x: float, world_y: float
+    ) -> tuple[int, int]:
+        """
+        Convertit une position logique en pixels, en appliquant le scale
+        et l'offset de centrage.
+        """
+        screen_x = int(world_x * self.scale + self.offset_x)
+        screen_y = int(world_y * self.scale + self.offset_y)
+        return (screen_x, screen_y)
+┌─(~/Documents/Milestone_3/Fly-in)───────────────────────────────────────────(tiana-an@c1r11s9:pts/0)─┐
+└─(09:12:38 on main ✭)──>                                                               ──(Tue,Jul07)─┘
+
+
