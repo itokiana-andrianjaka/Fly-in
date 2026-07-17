@@ -1,15 +1,17 @@
+"""Parser for the configuration file of the drone simulation."""
+
 from error import print_error
-import re
-from typing import Optional
 from model import Zone, Connection, ZoneType
 
 try:
     from pydantic import BaseModel, Field, ValidationError
 except ModuleNotFoundError as err:
-    print_error(f"{err}. Please install it using 'pip install pydantic'.")
+    print_error(str(err))
 
 
 class MapParser(BaseModel):
+    """Parser for the configuration file of the drone simulation."""
+
     nb_drones: int = Field(default=0)
     zones: dict[str, Zone] = {}
     connections: list[Connection] = []
@@ -17,6 +19,15 @@ class MapParser(BaseModel):
     end_zone_name: str = Field(default="")
 
     def _process_nb_drones(self, value: str, line_num: int) -> None:
+        """Process the number of drones from the configuration file.
+
+        Args:
+            value (str): The value of the number of drones as a string.
+            line_num (int): The line number in the configuration file.
+
+        Raises:
+            ValueError: If the value is not a positive integer.
+        """
         try:
             val_int = int(value)
             if val_int <= 0:
@@ -29,20 +40,33 @@ class MapParser(BaseModel):
             )
 
     def _process_hub(self, key: str, value: str, line_num: int) -> None:
-        metadata_str = ""
-        metadata_match = re.search(r"\[(.*)\]", value)
+        """Process a hub definition from the configuration file.
 
-        if metadata_match:
-            metadata_str = metadata_match.group(1)
-            value = value.split("[")[0].strip()
+        Args:
+            key (str): The key for the hub definition.
+            value (str): The value for the hub definition.
+            line_num (int): The line number in the configuration file.
 
-        tokens = value.split()
-        if len(tokens) != 3:
+        Raises:
+            ValueError: If the hub definition is invalid.
+        """
+        parts = value.strip().split(maxsplit=3)
+
+        if len(parts) < 3:
+            raise ValueError(f"Line {line_num}: Invalid hub definition.")
+
+        name = parts[0]
+        x_str = parts[1]
+        y_str = parts[2]
+
+        if "-" in name:
             raise ValueError(
-                f"Line {line_num}: A hub must have a name and XY coordinates."
+                f"line {line_num}: invalid zone name: '-' is not allowed"
             )
 
-        name, x_str, y_str = tokens
+        metadata_str = ""
+        if len(parts) == 4:
+            metadata_str = parts[3]
 
         if name in self.zones:
             raise ValueError(
@@ -58,7 +82,7 @@ class MapParser(BaseModel):
             )
 
         zone_type = ZoneType.NORMAL
-        color: Optional[str] = None
+        color: str | None = None
 
         # Si c'est le départ ou l'arrivée,
         # la capacité par défaut s'adapte au nombre de drones
@@ -68,7 +92,16 @@ class MapParser(BaseModel):
             max_drones = 1
 
         if metadata_str:
-            tags = metadata_str.split()
+
+            if not (
+                metadata_str.startswith("[") and metadata_str.endswith("]")
+            ):
+                raise ValueError(
+                    f"line {line_num}: "
+                    "metadata must be enclosed in brackets [...]"
+                )
+
+            tags = metadata_str[1:-1].split()
             for tag in tags:
                 if "=" not in tag:
                     raise ValueError(
@@ -90,11 +123,15 @@ class MapParser(BaseModel):
                 elif info_key == "max_drones":
                     try:
                         max_drones = int(info_val)
+                        if max_drones <= 0:
+                            raise ValueError()
                     except ValueError:
                         raise ValueError(
                             f"Line {line_num}: "
                             "'max_drones' must be a positive integer."
                         )
+                else:
+                    raise ValueError(f"line{line_num}: unknown metadata info")
 
         if key == "start_hub":
             if self.start_zone_name:
@@ -112,37 +149,56 @@ class MapParser(BaseModel):
         # Interception des erreurs de contraintes de Pydantic (ex: ge=0, gt=1)
         try:
             self.zones[name] = Zone(
-                name=name, coordinate_x=x, coordinate_y=y,
-                zone_type=zone_type, color=color, max_drones=max_drones
+                name=name,
+                coordinate_x=x,
+                coordinate_y=y,
+                zone_type=zone_type,
+                color=color,
+                max_drones=max_drones,
             )
         except ValidationError as e:
             # Récupère le message d'erreur simplifié de Pydantic
-            raw_msg = e.errors()[0]['msg']
+            raw_msg = e.errors()[0]["msg"]
             raise ValueError(
                 f"Line {line_num}: "
                 f"Validation failed for Hub '{name}' -> {raw_msg}"
             )
 
     def _process_connection(self, value: str, line_num: int) -> None:
-        metadata_str = ""
-        metadata_match = re.search(r"\[(.*)\]", value)
-        if metadata_match:
-            metadata_str = metadata_match.group(1)
-            value = value.split("[")[0].strip()
+        """Process a connection definition from the configuration file.
 
-        if "-" not in value:
+        Args:
+            value (str): The value for the connection definition.
+            line_num (int): The line number in the configuration file.
+
+        Raises:
+            ValueError: If the connection definition is invalid.
+        """
+        parts = value.strip().split()
+
+        if len(parts) < 1:
+            raise ValueError(
+                f"Line {line_num}: Invalid connection definition."
+            )
+
+        connection_link = parts[0]
+        metadata_str = ""
+        if len(parts) == 2:
+            metadata_str = parts[1]
+
+        if "-" not in connection_link:
             raise ValueError(
                 f"Line {line_num}: Invalid connection "
                 "(must use a hyphen, e.g.: zoneA-zoneB)."
             )
 
-        parts = value.split("-")
-        if len(parts) != 2:
+        link = connection_link.split("-")
+        if len(link) != 2:
             raise ValueError(
                 f"Line {line_num}: Connection must have exactly one hyphen."
             )
 
-        z1, z2 = parts[0].strip(), parts[1].strip()
+        z1, z2 = link[0].strip(), link[1].strip()
 
         if z1 not in self.zones or z2 not in self.zones:
             raise ValueError(
@@ -150,9 +206,29 @@ class MapParser(BaseModel):
                 f"one or both of the zones ('{z1}' or '{z2}') does not exist."
             )
 
+        # Vérification des connexions dupliquées :
+        # "a-b" et "b-a" sont considérées identiques selon le sujet (VII.4)
+        for existing in self.connections:
+            if (existing.first_zone == z1 and existing.second_zone == z2) or (
+                existing.first_zone == z2 and existing.second_zone == z1
+            ):
+                raise ValueError(
+                    f"Line {line_num}: Duplicate connection "
+                    f"between '{z1}' and '{z2}'."
+                )
+
         max_link_capacity = 1
         if metadata_str:
-            tags = metadata_str.split()
+
+            if not (
+                metadata_str.startswith("[") and metadata_str.endswith("]")
+            ):
+                raise ValueError(
+                    f"line {line_num}: "
+                    "metadata must be enclosed in brackets [...]"
+                )
+
+            tags = metadata_str[1:-1].split()
             for tag in tags:
                 if "=" not in tag:
                     raise ValueError(
@@ -164,37 +240,54 @@ class MapParser(BaseModel):
                 if info_key.strip() == "max_link_capacity":
                     try:
                         max_link_capacity = int(info_val.strip())
+                        if max_link_capacity <= 0:
+                            raise ValueError()
                     except ValueError:
                         raise ValueError(
                             f"Line {line_num}: "
                             "'max_link_capacity' must be a positive integer."
                         )
+                else:
+                    raise ValueError(f"line{line_num}: unknown metadata info")
 
         try:
-            self.connections.append(Connection(
-                first_zone=z1, second_zone=z2,
-                max_link_capacity=max_link_capacity
+            self.connections.append(
+                Connection(
+                    first_zone=z1,
+                    second_zone=z2,
+                    max_link_capacity=max_link_capacity,
                 )
             )
         except ValidationError as e:
-            raw_msg = e.errors()[0]['msg']
+            raw_msg = e.errors()[0]["msg"]
             raise ValueError(
                 f"Line {line_num}: "
                 f"Validation failed for connection -> {raw_msg}"
             )
 
     def parsing_file(self, file_path: str) -> None:
+        """Parse the configuration file and initializes the simulation.
+
+        Args:
+            file_path (str): The path to the configuration file.
+
+        Raises:
+            ValueError:
+                If there are any issues with
+                the configuration file format or content.
+        """
         try:
             with open(file_path, "r") as file:
                 done_first_line = 0
                 for line_number, line in enumerate(file, 1):
-                    if not line.strip() or line.strip()[0] == '#':
+                    if not line.strip() or line.strip()[0] == "#":
                         continue
 
                     if ":" not in line:
                         raise ValueError(f"Line {line_number}: missing ':'")
 
-                    parts = line.split(":")
+                    part = line.split("#", 1)
+                    parts = part[0].split(":")
                     if len(parts) != 2:
                         raise ValueError(
                             f"Line {line_number}: ':' syntax error"
@@ -219,7 +312,6 @@ class MapParser(BaseModel):
                                 f"Line {line_number}: The number of drones is "
                                 "defined several times."
                             )
-
                         elif done_first_line:
                             raise ValueError(
                                 f"Line {line_number}: Unknown prefix '{key}'"

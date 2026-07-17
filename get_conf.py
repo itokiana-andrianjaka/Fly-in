@@ -1,3 +1,5 @@
+"""Function to retrieve configuration from a map file."""
+
 import sys
 from pathlib import Path
 from typing import Any
@@ -9,9 +11,26 @@ from error import print_error
 def get_conf() -> dict[str, Any]:
     """Backward-compatible helper for simple scripts.
 
-    Reads `config.txt` located next to this module and returns a dict
-    with keys used by other modules (for example: 'nb_drones').
+    Reads the map file passed as the first CLI argument and returns a dict
+    with keys used by other modules.
+
+    Returns:
+        dict [str, Any]:
+            A dictionary containing the configuration parameters:
+            - "nb_drones": Number of drones to simulate.
+            - "zones": Dictionary of zones with their coordinates.
+            - "connections": List of connections between zones.
+            - "start_zone": Name of the starting zone.
+            - "end_zone": Name of the ending zone.
     """
+    # Protection contre l'absence d'argument en ligne de commande
+    if len(sys.argv) != 2:
+        print_error(
+            "Usage: uv run main.py <map_file> or When using "
+            "the Makefile, the map file must be specified as `MAPS=<file>`."
+            "\nmake run MAPS=<map_file>"
+        )
+
     config_path = Path(__file__).resolve().parent / sys.argv[1]
     parser = MapParser()
     try:

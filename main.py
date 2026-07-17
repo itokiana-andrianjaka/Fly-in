@@ -1,10 +1,5 @@
-# Fichier: main.py
-"""
-Point d'entrée principal pour l'exécution
-graphique et textuelle du projet Fly-in.
-"""
+"""Main entry point for the Fly-in simulation and visualization program."""
 
-import sys
 from pathlib import Path
 
 from get_conf import get_conf
@@ -20,13 +15,10 @@ try:
     import pygame
 except ModuleNotFoundError as er:
     print_error(str(er))
-    sys.exit(1)
 
 
 def run_simulation() -> None:
-    """
-    Calcule les chemins spatio-temporels et affiche les lignes de log requises.
-    """
+    """Calculate spatio-temporal paths and displays the required log lines."""
     conf = get_conf()
 
     pathfinder = Pathfinder(
@@ -41,7 +33,6 @@ def run_simulation() -> None:
 
     if not drone_paths or len(drone_paths[0]) == 0:
         print_error("No valid path could be found to the destination.")
-        return
 
     simulator = Simulator(
         start_zone=conf["start_zone"],
@@ -57,7 +48,7 @@ def run_simulation() -> None:
 
 
 def run_pygame() -> None:
-    """Gère l'interface d'affichage graphique animée de Pygame."""
+    """Manage Pygame's animated graphical display interface."""
     pygame.init()
 
     screen = pygame.display.set_mode(WINDOW_SIZE)
@@ -68,7 +59,7 @@ def run_pygame() -> None:
     base_dir = Path(__file__).resolve().parent
     image_files = {
         "background": base_dir / "background.png",
-        "drone": base_dir / "first_drone.png",
+        "drone": base_dir / "drone.png",
         "zone": base_dir / "zone.png",
     }
 
@@ -81,7 +72,7 @@ def run_pygame() -> None:
         WINDOW_SIZE,
     )
     small_drone = pygame.transform.scale(
-        pygame.image.load(str(image_files["drone"])).convert_alpha(), (95, 95)
+        pygame.image.load(str(image_files["drone"])).convert_alpha(), (100, 80)
     )
     small_zone = pygame.transform.scale(
         pygame.image.load(str(image_files["zone"])).convert_alpha(), (100, 70)
@@ -104,7 +95,6 @@ def run_pygame() -> None:
 
     if not drone_paths or len(drone_paths[0]) == 0:
         print_error("No valid path could be found to the destination.")
-        return
 
     simulator = Simulator(
         start_zone=start_name,
@@ -125,12 +115,14 @@ def run_pygame() -> None:
             )
         )
 
-    # Suivi logique de la position des drones pour l'affichage Pygame
+    # Suivi logique de la zone actuelle de chaque drone côté visuel.
+    # Séparé de drone.position (flottant/décalé) pour rester synchronisé
+    # avec les logs du simulateur sans dépendre des coordonnées pixels.
     drone_zone_tracking: list[str] = [start_name] * nb_drones
 
     # --- Configuration caméra ---
     view = View()
-    coordinates_list = []
+    coordinates_list: list[tuple[int, int]] = []
     for z in zones.values():
         coordinates_list.append((z.coordinate_x, z.coordinate_y))
 
@@ -146,9 +138,6 @@ def run_pygame() -> None:
     animation_started = False
     current_log_index = 0
 
-    # ==========================================================================
-    # BOUCLE PRINCIPALE PYGAME
-    # ==========================================================================
     while running:
         for drone in drones:
             drone.update()
@@ -160,17 +149,19 @@ def run_pygame() -> None:
                 if event.key == pygame.K_q:
                     running = False
                 elif event.key == pygame.K_a:
+                    # Touche A : démarrer ou mettre en pause l'animation
                     animation_started = not animation_started
-            view.handle_event(event)
+            view.camera_mouse(event)
 
-        view.camera()
+        # Update keyboard input every frame (for continuous key press)
+        view.camera_keyboard()
 
         # --- Interprétation et animation pas à pas du log de simulation ---
         if animation_started and current_log_index < len(logs):
             any_moving = any(drone.is_moving for drone in drones)
 
-            # On attend l'arrêt complet de
-            # tous les drones avant de lire le tour suivant
+            # On attend l'arrêt complet de tous les drones avant
+            # le tour suivant
             if not any_moving:
                 log = logs[current_log_index]
 
@@ -186,69 +177,62 @@ def run_pygame() -> None:
                     if move is None:
                         continue
 
-                    # Récupération de la cible brute
-                    # (soit une zone, soit un lien)
-                    destination = move.split("-")[1]
+                    # On coupe uniquement sur le premier tiret pour préserver
+                    # le nom complet de la connexion
+                    # (ex: "D1-zoneA-zoneB" → "zoneA-zoneB")
+                    destination = move.split("-", 1)[1]
 
-                    # 1. CAS DU TOUR 1 DE ZONE RESTREINTE
-                    # (Exemple de log : D1-A_B)
+                    # 1. CAS TRANSIT RESTRICTED
+                    # (destination = "zoneA-zoneB", pas dans zones)
                     if destination not in zones:
-                        drone_path = drone_paths[drone_index]
-                        current = drone_zone_tracking[drone_index]
-
-                        # Retrouver la vraie zone de destination finale
-                        # dans son chemin théorique
-                        next_zone_name: str | None = None
-                        for j, step in enumerate(drone_path):
-                            zone_name = step[1]
-                            if (
-                                zone_name == current
-                                and j + 1 < len(drone_path)
-                            ):
-                                next_zone_name = drone_path[j + 1][1]
-                                break
+                        # Le nom de connexion est "zoneA-zoneB".
+                        # Les noms de zones n'ayant pas de tiret
+                        # (validé par le parser),
+                        # split("-") donne exactement ["zoneA", "zoneB"].
+                        parts = destination.split("-")
+                        next_zone_name = parts[1] if len(parts) == 2 else None
 
                         if (
                             next_zone_name is not None
                             and next_zone_name in zones
                         ):
-                            current_zone = zones[current]
-                            target_zone = zones[next_zone_name]
+                            current_zone_obj = zones[
+                                drone_zone_tracking[drone_index]
+                            ]
+                            target_zone_obj = zones[next_zone_name]
 
-                            # Calcul des coordonnées géométriques du
-                            # milieu du lien
+                            # Calcul du milieu géométrique du lien pour
+                            # l'animation
                             mid_x = (
-                                float(current_zone.coordinate_x)
-                                + float(target_zone.coordinate_x)
+                                float(current_zone_obj.coordinate_x)
+                                + float(target_zone_obj.coordinate_x)
                             ) / 2.0
                             mid_y = (
-                                float(current_zone.coordinate_y)
-                                + float(target_zone.coordinate_y)
+                                float(current_zone_obj.coordinate_y)
+                                + float(target_zone_obj.coordinate_y)
                             ) / 2.0
 
-                            # On envoie le drone s'arrêter au milieu
-                            # pour ce premier tour
+                            # Le drone s'arrête au milieu ce premier tour
                             drone.start_move((mid_x, mid_y))
 
-                            # On met à jour son tracking pour que le
-                            # Tour 2 connaisse sa provenance
+                            # On met à jour le tracking pour que le tour 2
+                            # sache d'où vient le drone
                             drone_zone_tracking[drone_index] = next_zone_name
 
-                    # 2. CAS DU TOUR 2 DE ZONE RESTREINTE OU
-                    # ZONE STANDARD (1 tour direct)
+                    # 2. CAS ZONE NORMALE / ARRIVÉE EN ZONE RESTRICTED
+                    # (1 tour direct)
                     else:
-                        if destination in zones:
-                            target = zones[destination]
-                            drone.start_move(
-                                (
-                                    float(target.coordinate_x),
-                                    float(target.coordinate_y),
-                                )
+                        target = zones[destination]
+                        drone.start_move(
+                            (
+                                float(target.coordinate_x),
+                                float(target.coordinate_y),
                             )
-                            drone_zone_tracking[drone_index] = destination
+                        )
+                        drone_zone_tracking[drone_index] = destination
 
                 # Passage au tour de log suivant
-                current_log_index = current_log_index + 1
+                current_log_index += 1
 
         # --- Phase de rendu graphique ---
         screen.fill(pygame.Color("lightblue"))

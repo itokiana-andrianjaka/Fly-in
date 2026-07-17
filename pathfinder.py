@@ -1,31 +1,29 @@
-# Fichier: pathfinder.py
-"""
-Algorithme de recherche de chemins spatio-temporels avec table de réservation.
-"""
+"""Spatio-temporal path search algorithm with reservation table."""
 
 from collections import deque
-from typing import Optional
 from model import Zone, Connection, ZoneType
 
 
 class SpaceTimeReservation:
-    """
-    Cette classe existe pour centraliser et
-    suivre les réservations d'occupation
-    des zones et des connexions à chaque tour de simulation précis.
-    Elle empêche les collisions en s'assurant
-    qu'aucun drone ne dépasse les capacités requises.
-    """
+    """Maintains a reservation table for zones and connections over time."""
 
     def __init__(self) -> None:
+        """Initialize the reservation table."""
         # Clé: (zone_name, turn) -> Valeur: nombre de drones
         self.zone_bookings: dict[tuple[str, int], int] = {}
         # Clé: (frozenset_liaison, turn) -> Valeur: nombre de drones
         self.link_bookings: dict[tuple[frozenset[str], int], int] = {}
 
     def is_zone_free(self, zone: str, turn: int, max_cap: int) -> bool:
-        """
-        Vérifie si une zone a encore de la capacité disponible à un tour donné.
+        """Check if a zone has available capacity at a given turn.
+
+        Args:
+            zone (str): The name of the zone to check.
+            turn (int): The turn number to check for availability.
+            max_cap (int): The maximum capacity of the zone.
+
+        Returns:
+            bool: True if the zone has available capacity, False otherwise.
         """
         current_occupancy = self.zone_bookings.get((zone, turn), 0)
         if current_occupancy < max_cap:
@@ -35,9 +33,17 @@ class SpaceTimeReservation:
     def is_link_free(
         self, zone_a: str, zone_b: str, turn: int, max_cap: int
     ) -> bool:
-        """
-        Vérifie si une connexion a
-        encore de la capacité disponible à un tour donné.
+        """Check if a connection has available capacity at a given turn.
+
+        Args:
+            zone_a (str): The name of the first zone.
+            zone_b (str): The name of the second zone.
+            turn (int): The turn number to check for availability.
+            max_cap (int): The maximum capacity of the connection.
+
+        Returns:
+            bool:
+                True if the connection has available capacity, False otherwise.
         """
         key = frozenset((zone_a, zone_b))
         current_occupancy = self.link_bookings.get((key, turn), 0)
@@ -46,31 +52,44 @@ class SpaceTimeReservation:
         return False
 
     def reserve_zone(self, zone: str, turn: int) -> None:
-        """Inscrit une réservation pour une zone à un tour spécifique."""
+        """Reserve a zone for a specific turn.
+
+        Args:
+            zone (str): The name of the zone to reserve.
+            turn (int): The turn number to reserve the zone for.
+        """
         key = (zone, turn)
         current = self.zone_bookings.get(key, 0)
         self.zone_bookings[key] = current + 1
 
     def reserve_link(self, zone_a: str, zone_b: str, turn: int) -> None:
-        """Inscrit une réservation pour une connexion à un tour spécifique."""
+        """Reserve a link for a specific turn.
+
+        Args:
+            zone_a (str): The name of the first zone.
+            zone_b (str): The name of the second zone.
+            turn (int): The turn number to reserve the link for.
+        """
         key = (frozenset((zone_a, zone_b)), turn)
         current = self.link_bookings.get(key, 0)
         self.link_bookings[key] = current + 1
 
 
 class Pathfinder:
-    """
-    Cette classe existe pour calculer un
-    itinéraire spatio-temporel optimal pour
-    chaque drone individuel.
-    Elle utilise une recherche en largeur (BFS) étendue
-    au temps, garantissant l'absence de conflits et
-    minimisant le nombre total de tours.
-    """
+    """Implement a spatio-temporal pathfinding algorithm for drones."""
 
     def __init__(
         self, zones: dict[str, Zone], connections: list[Connection]
     ) -> None:
+        """Initialize the Pathfinder with zones and connections.
+
+        Args:
+            zones (dict[str, Zone]):
+                A dictionary mapping zone names to Zone objects.
+            connections (list[Connection]):
+                A list of Connection objects representing the connections
+                between zones.
+        """
         self.zones = zones
         self.connections = connections
         self.adjacency_list: dict[str, list[str]] = {}
@@ -78,9 +97,7 @@ class Pathfinder:
         self._build_graph()
 
     def _build_graph(self) -> None:
-        """
-        Construit les structures de données du graphe pour faciliter l'accès.
-        """
+        """Build the adjacency list and connection mapping for the graph."""
         for zone_name in self.zones:
             self.adjacency_list[zone_name] = []
 
@@ -97,16 +114,25 @@ class Pathfinder:
     def _get_zone_capacity(
         self, zone_name: str, start_zone: str, end_zone: str, total_drones: int
     ) -> int:
-        """
-        Retourne la capacité maximale d'une zone avec
-        exceptions pour départ/arrivée.
+        """Return the maximum capacity of a zone.
+
+        Args:
+            zone_name (str): The name of the zone to check.
+            start_zone (str): The name of the starting zone.
+            end_zone (str): The name of the ending zone.
+            total_drones (int): The total number of drones in the simulation.
         """
         if zone_name == start_zone or zone_name == end_zone:
             return total_drones
         return self.zones[zone_name].max_drones
 
     def _get_link_capacity(self, zone_a: str, zone_b: str) -> int:
-        """Retourne la capacité maximale d'une liaison connectrice."""
+        """Return the maximum capacity of a connecting link.
+
+        Args:
+            zone_a (str): The name of the first zone.
+            zone_b (str): The name of the second zone.
+        """
         key = frozenset((zone_a, zone_b))
         conn = self.connections_map.get(key)
         if conn is not None:
@@ -119,22 +145,29 @@ class Pathfinder:
         end: str,
         total_drones: int,
         reservation: SpaceTimeReservation,
-    ) -> list[tuple[int, str, Optional[str]]]:
-        """
-        Trouve le chemin le plus court dans
-            l'espace-temps pour un drone unique.
-        Retourne une liste de tuples :
-            (tour, nom_zone, nom_connexion_si_transit).
+    ) -> list[tuple[int, str, str | None]]:
+        """Find a spatio-temporal path from the start zone to the end zone.
+
+        Args:
+            start (str): The name of the starting zone.
+            end (str): The name of the destination zone.
+            total_drones (int): The total number of drones in the simulation.
+            reservation (SpaceTimeReservation):
+                The reservation table to check for zone and link availability.
+
+        Returns:
+            list[tuple[int, str, str | None]]:
+                A list of tuples representing the spatio-temporal path.
         """
         # Queue contient des éléments:
         # (current_zone, current_turn, path_history)
-        queue: deque[tuple[str, int, list[tuple[int, str, Optional[str]]]]] = (
+        queue: deque[tuple[str, int, list[tuple[int, str, str | None]]]] = (
             deque()
         )
         queue.append((start, 0, [(0, start, None)]))
 
         # Pour éviter les boucles redondantes dans l'espace-temps
-        visited = set()
+        visited: set[tuple[str, int]] = set()
         visited.add((start, 0))
 
         max_search_turns = 200
@@ -216,35 +249,55 @@ class Pathfinder:
 
     def assign_paths(
         self, start: str, end: str, nb_drones: int
-    ) -> list[list[tuple[int, str, Optional[str]]]]:
-        """
-        Calcule et planifie les trajectoires de toute la flotte de drones.
+    ) -> list[list[tuple[int, str, str | None]]]:
+        """Assign spatio-temporal paths to multiple drones.
+
+        Args:
+            start (str): The name of the starting zone.
+            end (str): The name of the destination zone.
+            nb_drones (int): The number of drones to assign paths to.
+
+        Returns:
+            list[list[tuple[int, str, str | None]]]:
+                A list of spatio-temporal paths for each drone.
         """
         reservation = SpaceTimeReservation()
-        all_drones_paths = []
+        all_drones_paths: list[list[tuple[int, str, str | None]]] = []
 
-        for i in range(nb_drones):
+        for _ in range(nb_drones):
             path = self.find_space_time_path(
                 start, end, nb_drones, reservation
             )
             all_drones_paths.append(path)
 
-            # Enregistrer les réservations de
-            # ce drone pour bloquer les places aux suivants
-            for step in path:
-                turn = step[0]
-                zone_name = step[1]
-                connection_name = step[2]
+            # Enregistrer les réservations de ce drone pour bloquer les places
+            # aux suivants. On compare deux étapes consécutives pour savoir
+            # si le drone a bougé (mouvement normal) ou attendu sur place.
+            for step_idx in range(1, len(path)):
+                prev_step = path[step_idx - 1]
+                curr_step = path[step_idx]
 
-                if turn == 0:
-                    continue
+                turn = curr_step[0]
+                zone_name = curr_step[1]
+                connection_name = curr_step[2]
+                prev_zone_name = prev_step[1]
 
                 if connection_name is not None:
-                    # Le drone est en transit sur une connexion
+                    # Transit restricted : réserve la connexion traversée
+                    # (les noms de zones n'ont pas de tiret, le split est sûr)
                     parts = connection_name.split("-")
                     reservation.reserve_link(parts[0], parts[1], turn)
                 else:
-                    # Le drone est présent de manière stable dans une zone
+                    # Présence normale dans la zone : réserve la zone
                     reservation.reserve_zone(zone_name, turn)
+
+                    # Si le drone a réellement bougé (pas une attente),
+                    # réserve aussi la connexion traversée ce tour.
+                    # Cela respecte max_link_capacity pour
+                    # les mouvements normaux.
+                    if zone_name != prev_zone_name:
+                        reservation.reserve_link(
+                            prev_zone_name, zone_name, turn
+                        )
 
         return all_drones_paths

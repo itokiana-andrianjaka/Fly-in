@@ -1,4 +1,4 @@
-import sys
+"""View module for managing the visual representation of the simulation."""
 
 from error import print_error
 from model import WINDOW_SIZE
@@ -8,22 +8,10 @@ try:
     from pydantic import BaseModel, Field
 except ModuleNotFoundError as er:
     print_error(str(er))
-    sys.exit(1)
 
 
 class View(BaseModel):
-    """
-    Gère le décalage (offset) de tout l'affichage pour permettre de scroller.
-
-    Le principe :
-    - Toutes les positions "logiques" (coordonnées du fichier config)
-      sont converties en pixels via world_to_screen().
-    - world_to_screen() ajoute simplement l'offset à la position.
-    - Quand l'utilisateur fait glisser la souris (clic gauche maintenu),
-      on modifie l'offset -> tout l'affichage se déplace.
-    - Au démarrage, on calcule un offset qui centre la carte si elle
-      est plus petite que la fenêtre.
-    """
+    """Represents the visual state of the simulation."""
 
     scale: float = Field(default=60.0, gt=0.0)  # float au lieu de int
     offset_x: float = Field(default=0.0)
@@ -40,11 +28,13 @@ class View(BaseModel):
         zones_positions: list[tuple[int, int]],
         start_zone_pos: tuple[int, int],
     ) -> None:
-        """
-        Calcule l'offset et ajuste le scale initial :
-        - Écarte automatiquement les zones si la map est trop serrée/petite.
-        - Centre globalement si toute la carte tient dans la fenêtre.
-        - Centre uniquement sur le START si la carte déborde.
+        """Calculate the best scale and offset to fit all zones on the screen.
+
+        Args:
+            zones_positions (list[tuple[int, int]]):
+                List of (x, y) coordinates for all zones.
+            start_zone_pos (tuple[int, int]):
+                Coordinates of the starting zone for centering the view.
         """
         if not zones_positions:
             return
@@ -65,7 +55,7 @@ class View(BaseModel):
 
         # 2. ÉLOIGNEMENT AUTOMATIQUE : Si les zones sont trop proches
         # (ex: écart total < 5 unités)
-        if world_width < 5 or world_height < 5:
+        if world_width < 7 or world_height < 7:
             self.scale = 130.0  # On augmente le scale pour forcer un
             # écartement propre en pixels
         else:
@@ -94,10 +84,13 @@ class View(BaseModel):
             self.offset_x = (WINDOW_SIZE[0] / 2) - center_world_x
             self.offset_y = (WINDOW_SIZE[1] / 2) - center_world_y
 
-    def handle_event(self, event: pygame.event.Event) -> None:
-        """
-        À appeler pour chaque événement pygame.
-        Gère le clic gauche maintenu pour faire glisser la vue.
+    def camera_mouse(self, event: pygame.event.Event) -> None:
+        """Handle mouse input for view control.
+
+        Mouse: drag with left mouse button to pan the view.
+
+        Args:
+            event (pygame.event.Event): pygame event to process.
         """
         # Clic gauche enfoncé -> on commence à "attraper" la vue
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -118,16 +111,13 @@ class View(BaseModel):
 
             self.last_mouse_pos = (mouse_x, mouse_y)
 
-    def camera(self) -> None:
-        """
-        À appeler à chaque frame dans la boucle principale
-        (pas dans les événements).
-        Gère le défilement continu tant qu'une
-        touche directionnelle est maintenue.
+    def camera_keyboard(self) -> None:
+        """Handle keyboard input for view control.
+
+        Keyboard: arrow keys to scroll (must be called every frame).
         """
         keys = pygame.key.get_pressed()
         scroll_speed_pxl = 10
-        # Vitesse par frame (ajuste cette valeur à ta guise !)
 
         if keys[pygame.K_LEFT]:
             self.offset_x += scroll_speed_pxl
@@ -141,9 +131,14 @@ class View(BaseModel):
     def world_to_screen(
         self, world_x: float, world_y: float
     ) -> tuple[int, int]:
-        """
-        Convertit une position logique en pixels, en appliquant le scale
-        et l'offset de centrage.
+        """Convert world coordinates to screen coordinates.
+
+        Args:
+            world_x (float): Description of the world x-coordinate.
+            world_y (float): Description of the world y-coordinate.
+
+        Returns:
+            tuple[int, int]: The corresponding screen (x, y) coordinates.
         """
         screen_x = int(world_x * self.scale + self.offset_x)
         screen_y = int(world_y * self.scale + self.offset_y)

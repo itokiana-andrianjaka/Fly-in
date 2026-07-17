@@ -1,4 +1,5 @@
-import sys
+"""Module used to manipulate drones."""
+
 import random
 
 from error import print_error
@@ -7,15 +8,10 @@ try:
     from pydantic import BaseModel, Field
 except ModuleNotFoundError as er:
     print_error(str(er))
-    sys.exit(1)
 
 
 class Drone(BaseModel):
-    """
-    Représente un drone capable de se déplacer en douceur entre deux
-    positions et de maintenir son animation d'oscillation et son chemin
-    de manière autonome.
-    """
+    """Represents a drone with autonomous movement and animation."""
 
     # Position actuelle du drone en coordonnées logiques (pas en pixels)
     position: tuple[float, float] = Field(default=(0.0, 0.0))
@@ -35,52 +31,42 @@ class Drone(BaseModel):
     # --- Itinéraire propre à ce drone ---
     path: list[str] = Field(default_factory=list)
 
-    # --- Liste de couleurs stables pour varier chaque drone ---
-    color_name: str = Field(
-        default_factory=lambda: random.choice(
-            [
-                "white",
-                "brown",
-                "saddlebrown",
-                "sienna",
-                "gray",
-                "dimgray",
-                "darkgray",
-                "lightgray",
-                "khaki",
-                "darkkhaki",
-            ]
-        )
-    )
-
     # --- État de l'animation verticale propre à chaque drone ---
-    current_height: float = Field(default=43.0)
-    move: float = Field(default=0.1)
+    current_height: float = Field(
+        default_factory=lambda: random.uniform(38.0, 48.0)
+    )
+    move: float = Field(
+        default_factory=lambda: random.choice([0.08, 0.1, 0.12])
+        * random.choice([-1.0, 1.0])
+    )
 
     # Décalage aléatoire fixe pour éviter que les drones forment une queue
     # Généré une seule fois à la création, jamais modifié ensuite
-    offset_x: float = Field(
-        default_factory=lambda: random.uniform(-0.1, 0.1)
-    )
-    offset_y: float = Field(
-        default_factory=lambda: random.uniform(-0.1, 0.1)
-    )
+    offset_x: float = Field(default_factory=lambda: random.uniform(-0.1, 0.1))
+    offset_y: float = Field(default_factory=lambda: random.uniform(-0.1, 0.1))
 
     @property
     def is_moving(self) -> bool:
-        """
-        Retourne True si le drone est en cours de déplacement entre deux zones.
+        """Validation if the drone is still moving.
+
+        Returns:
+            bool: Returns True if the drone is moving between two zones.
         """
         return self.progress < 1.0
 
     def start_move(self, target: tuple[float, float]) -> None:
-        """Démarre une animation de déplacement vers `target`."""
+        """Start a move animation to target.
+
+        Args:
+            target (tuple[float, float]):
+                Destination position in logical coordinates
+        """
         self.start_pos = self.position
         self.target_pos = (float(target[0]), float(target[1]))
         self.progress = 0.0
 
     def update(self) -> None:
-        """Avance l'animation du drone d'un pas à chaque frame."""
+        """Advance the drone animation one step at each frame."""
         # 1. Gestion du rebond de la chauve-souris autonome
         self.current_height += self.move
         if self.current_height >= 48.0:

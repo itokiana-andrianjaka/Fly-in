@@ -1,0 +1,29 @@
+nb_drones: 2
+# nb_drones: 5
+
+start_hub: start 0 0 [color=magenta zone=restricted]
+end_hub: goal 6 0 [color=gold zone=restricted]
+
+hub: priority 1 2 [zone=priority color=green]
+hub: not_priority 1 -2 [zone=normal color=grey]
+
+hub: a 3 0 [max_drones=1 max_drones=1]
+
+hub: b 3 1
+hub: c 5 1
+
+hub: blocked 5 -1 [zone=blocked color=red]
+
+
+connection: start-priority
+connection: start-not_priority
+
+connection: priority-a [max_link_capacity=2]
+connection: not_priority-a [max_link_capacity=2]
+
+connection: a-goal
+connection: a-b
+connection: a-blocked
+connection: blocked-goal [max_link_capacity=2]
+connection: b-c
+connection: c-goal

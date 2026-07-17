@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "flake8>=7.3.0",
+    "flake8-docstrings>=1.7.0",
     "mypy>=2.1.0",
     "pydantic>=2.13.4",
     "pygame-ce>=2.5.7",

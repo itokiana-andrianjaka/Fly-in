@@ -1,53 +1,78 @@
-# Fichier: simulator.py
-"""Moteur de génération et d'exécution des étapes de la simulation."""
-
-from typing import Optional
+"""Simulation module for managing drone movements and generating logs."""
 
 
 class TurnLog:
-    """
-    Cette classe existe pour formater et regrouper textuellement l'ensemble
-    des mouvements effectués par les drones durant un tour précis.
-    """
+    """Represents the log of drone movements for a single turn."""
 
     def __init__(self, turn_number: int) -> None:
+        """Initialize the turn log with a turn number.
+
+        Args:
+            turn_number (int): The current turn number in the simulation.
+        """
         self.turn_number = turn_number
         self.moves: list[str] = []
 
     def add_move(self, drone_id: int, target: str) -> None:
-        """Ajoute un déplacement respectant scrupuleusement le format
-        attendu."""
+        """Add a move to the turn log.
+
+        Args:
+            drone_id (int): The ID of the drone making the move.
+            target (str): The target zone or connection for the move.
+        """
         self.moves.append(f"D{drone_id}-{target}")
 
     def render(self) -> str:
-        """Génère la ligne finale de texte pour le terminal."""
+        """Render the turn log as a string for output.
+
+        Returns:
+            str: A string representation of the turn log, with moves
+            separated by spaces.
+        """
         return " ".join(self.moves)
 
     def is_empty(self) -> bool:
-        """Indique si aucun drone n'a bougé durant ce tour."""
+        """Check if the turn log is empty.
+
+        Returns:
+            bool:
+                True if there are no moves recorded for this turn,
+                False otherwise.
+        """
         return len(self.moves) == 0
 
 
 class Simulator:
-    """
-    Cette classe existe pour lire les trajectoires planifiées sans conflits
-    par le Pathfinder et générer l'historique complet des tours de simulation.
-    """
+    """Simulate the movement of drones through zones and connections."""
 
     def __init__(
         self,
         start_zone: str,
         end_zone: str,
-        drone_paths: list[list[tuple[int, str, Optional[str]]]],
+        drone_paths: list[list[tuple[int, str, str | None]]],
     ) -> None:
+        """Initialize the simulator with start/end zones and drone paths.
+
+        Args:
+            start_zone (str): The name of the starting zone.
+            end_zone (str): The name of the ending zone.
+            drone_paths (list[list[tuple[int, str, str | None]]]):
+                A list of paths for each drone, where each path is a list of
+                tuples containing (turn_number, zone_name, connection_name).
+        """
         self.start_zone = start_zone
         self.end_zone = end_zone
         self.drone_paths = drone_paths
         self.turn_logs: list[TurnLog] = []
 
     def run(self) -> list[TurnLog]:
-        """Parcourt la planification temporelle pour générer les rapports
-        de chaque tour."""
+        """Run the simulation and generates logs for each turn.
+
+        Returns:
+            list[TurnLog]:
+                A list of TurnLog objects representing the movements
+                of drones for each turn.
+        """
         # Trouver la durée maximale de la simulation planifiée
         max_turns = 0
         for path in self.drone_paths:
@@ -80,8 +105,8 @@ class Simulator:
                     prev_zone = previous_step[1]
                     prev_conn = previous_step[2]
 
-                    # Si la zone ou la connexion a changé par rapport au
-                    # tour précédent
+                    # Si la zone ou la connexion a changé par rapport
+                    # au tour précédent
                     if curr_zone != prev_zone or curr_conn != prev_conn:
                         if curr_conn is not None:
                             log.add_move(drone_id, curr_conn)

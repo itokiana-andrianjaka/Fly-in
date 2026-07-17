@@ -1,4 +1,4 @@
-import sys
+"""all the functions used to draw for visualization."""
 
 from error import print_error
 from view import View
@@ -10,7 +10,6 @@ try:
     import pygame
 except ModuleNotFoundError as er:
     print_error(str(er))
-    sys.exit(1)
 
 
 def draw_connections(
@@ -19,7 +18,18 @@ def draw_connections(
     zones: dict[str, Zone],
     connections: list[Connection],
 ) -> None:
-    """Dessine une ligne entre chaque paire de zones connectées."""
+    """Draw a line between each pair of connected zones.
+
+    Args:
+        screen (pygame.Surface):
+            Surface on which the connections are drawn.
+        view (View):
+            View used to convert world coordinates to screen coordinates.
+        zones (dict[str, Zone]):
+            Mapping of zone names to their corresponding Zone objects.
+        connections (list[Connection]): List of Connection objects
+            representing the connections between zones.
+    """
     for connection in connections:
         first_zone = zones[connection.first_zone]
         second_zone = zones[connection.second_zone]
@@ -37,6 +47,17 @@ def draw_connections(
 def create_zones_drawer() -> (
     Callable[[pygame.Surface, View, dict[str, Zone], pygame.Surface], None]
 ):
+    """Create a zone drawing function.
+
+    The returned function keeps an internal state to cycle through the
+    predefined rainbow colors whenever a zone uses the special
+    ``"rainbow"`` color.
+
+    Returns:
+        Callable
+            [[pygame.Surface, View, dict[str, Zone], pygame.Surface], None]:
+            A function that draws all zones into the screen.
+    """
     color_rainbow = [
         "Red",
         "Orange",
@@ -54,10 +75,24 @@ def create_zones_drawer() -> (
         zones: dict[str, Zone],
         zone_picture: pygame.Surface,
     ) -> None:
-        """
-        Dessine chaque zone :
-        - L'image de la zone centrée sur sa position
-        - Le nom de la zone écrit au-dessus
+        """Draw all zones on the screen.
+
+        Each zone is positioned according to the current view and tinted
+        with its configured color. If the zone color is ``"rainbow"``,
+        the color cycles through a predefined list at each draw call.
+
+        Args:
+            screen (pygame.Surface):
+                Surface on which the zones are drawn.
+            view (View):
+                View used to convert world coordinates to screen coordinates.
+            zones (dict[str, Zone]):
+                Mapping of zone names to their corresponding Zone objects.
+            zone_picture (pygame.Surface):
+                Base image used to render each zone.
+
+        Raises:
+            ValueError: If a zone specifies an unknown color.
         """
         half_w = zone_picture.get_width() // 2
         half_h = zone_picture.get_height() // 2
@@ -95,21 +130,38 @@ def create_drone_drawer() -> (
     Callable[[pygame.Surface, View, Drone, pygame.Surface, int], None]
 ):
     """
-    Crée un gestionnaire graphique capable de dessiner n'importe quel
-    drone de la flotte. Chaque drone reçoit une couleur distincte
-    basée sur son index dans la flotte.
+    Create a graphics manager capable of drawing all drones.
+
+    Each drone is assigned a distinct color based on its index.
+
+    Returns:
+        Callable [[pygame.Surface, View, Drone, pygame.Surface, int], None]:
+            A function that draws all drones into the screen.
     """
     drone_colors = [
         "white",
-        "brown",
+        "red",
         "saddlebrown",
         "sienna",
-        "gray",
+        "brown",
         "dimgray",
         "cyan",
         "magenta",
         "orange",
         "lime",
+    ]
+
+    drone_offsets = [
+        (0, 0),
+        (6, -4),
+        (-6, 4),
+        (8, 5),
+        (-8, -5),
+        (12, -2),
+        (-12, 2),
+        (4, 10),
+        (-4, -10),
+        (10, 8),
     ]
 
     def draw_drone(
@@ -119,6 +171,20 @@ def create_drone_drawer() -> (
         drone_picture: pygame.Surface,
         drone_index: int,
     ) -> None:
+        """Draw a drone on the screen with its animation and unique color.
+
+        Args:
+            screen (pygame.Surface):
+                Surface where the drone is rendered.
+            view (View):
+                Used to convert world coordinates to screen coordinates.
+            drone (Drone):
+                Drone instance containing its position and animation state.
+            drone_picture (pygame.Surface):
+                Base image used to render the drone.
+            drone_index (int):
+                Index of the drone, used to assign a unique color
+        """
         half_w = drone_picture.get_width() // 2
         half_h = drone_picture.get_height() // 2
 
@@ -138,17 +204,19 @@ def create_drone_drawer() -> (
         color_name = drone_colors[drone_index % len(drone_colors)]
         color = pygame.Color(color_name)
 
-        picture.fill(color, special_flags=pygame.BLEND_RGBA_MULT)
+        offset_x, offset_y = drone_offsets[drone_index % len(drone_offsets)]
+
+        tint = picture.copy()
+        tint.fill(color, special_flags=pygame.BLEND_RGBA_ADD)
+        picture.blit(
+            tint, (0, 0), special_flags=pygame.BLEND_RGBA_MULT
+        )
         screen.blit(
             picture,
-            (cx - half_w, cy - half_h - int(drone.current_height) + 10),
+            (
+                cx - half_w + offset_x,
+                cy - half_h - int(drone.current_height) + 10 + offset_y,
+            ),
         )
 
     return draw_drone
-
-
-def draw_edge(
-    screen: pygame.Surface, view: View, edge_picture: pygame.Surface
-) -> None:
-    """Dessine le edge pour le texte."""
-    pass
