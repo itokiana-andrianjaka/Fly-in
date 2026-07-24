@@ -39,40 +39,36 @@ Working on this project helped me become familiar with Pygame, improve my proble
 ---
 
 - input example (map_file):
+
 ```
-nb_drones: 2
-# nb_drones: 5
-
-
-start_hub: start 0 0 [color=magenta]
-end_hub: goal 6 0 [color=gold zone=restricted color=gold]
-
-hub: priority 1 2 [zone=priority color=green]
-hub: not_priority 1 -2 [zone=normal color=grey]
-
-hub: a 3 0 [max_drones=2 color=darkgrey zone=normal]
-hub: b 3 1
-hub: c 5 1
-
-hub: blocked 5 -1 [zone=blocked color=red]
-
-
-connection: start-priority
-connection: start-not_priority
-
-connection: priority-a [max_link_capacity=2]
-connection: not_priority-a [max_link_capacity=2]
-
-connection: a-goal
-connection: a-b
-connection: a-blocked
-connection: blocked-goal [max_link_capacity=2]
-connection: b-c
-connection: c-goal
+nb_drones: 5
+start_hub: hub 0 0 [color=green]
+end_hub: goal 10 10 [color=yellow]
+hub: roof1 3 4 [zone=restricted color=red]
+hub: roof2 6 2 [zone=normal color=blue]
+hub: corridorA 4 3 [zone=priority color=green max_drones=2]
+hub: tunnelB 7 4 [zone=normal color=red]
+hub: obstacleX 5 5 [zone=blocked color=gray]
+connection: hub-roof1
+connection: hub-corridorA
+connection: roof1-roof2
+connection: roof2-goal
+connection: corridorA-tunnelB [max_link_capacity=2]
+connection: tunnelB-goal
 ```
 
 - Output example:
 
+```bash
+D1-corridorA D2-hub-roof1
+D1-tunnelB D2-roof1 D3-corridorA D4-hub-roof1
+D1-goal D2-roof2 D3-tunnelB D4-roof1 D5-corridorA
+D2-goal D3-goal D4-roof2 D5-tunnelB
+D4-goal D5-goal
+
+Total turns: 5
+```
+Each movement follow the format: `D<ID>-<zone>`, or `D<ID>-<connection>` in case of drones still in flight toward restricted zones
 
 
 ## Instructions:
@@ -84,6 +80,8 @@ Makefile automates project setup, execution, debugging, cleanup, and code qualit
 ```bash
 make install       # Install project dependencies
 make run           # Run the main program
+make visual        # Run the program's visual (visual output only)
+make text_output   # Run the program's simulation (text output only)
 make debug         # Run the program with Python debugger (pdb)
 make clean         # Remove temporary files and caches
 make lint          # Run Flake8 and MyPy with required checking flags
@@ -93,8 +91,15 @@ make lint-strict   # Run Flake8 and MyPy in strict mode
 You can also run the program directly using:
 
 ```bash
-uv run main.py config.txt  # example as <config_file>
+uv run main.py config.txt # example as <config_file>
 ```
+
+And you can specify the mode:
+
+```bash
+uv run main.py config.txt visual
+```
+
 Replace `config.txt` with another configuration file if desired.
 
 ## Resources:
@@ -111,4 +116,8 @@ AI tools helped me solve specific bugs, better understand some algorithms, and l
 
 ## Algorithm choice:
 
-Breadth-First Search (BFS) was chosen as the core pathfinding algorithm because it guarantees the shortest path in an unweighted graph. To handle the project constraints, it was extended into a space-time BFS, where each state represents a (zone, turn) pair. This approach allows the algorithm to account for zone capacities, link capacities, waiting actions, and restricted zones while using a global reservation system to avoid conflicts between drones. Paths are computed sequentially, reserving space and time for each drone before planning the next one, ensuring efficient and collision-free routing.
+Breadth-First Search (BFS) was chosen as the core pathfinding algorithm because it explores states in increasing order of time steps. Therefore, the first valid path found corresponds to the minimum number of simulation turns under the given constraints.
+
+To handle the temporal and resource constraints of the project, the algorithm was extended into a space-time BFS. Instead of exploring only spatial positions, the search operates on a state space where each state represents a complete drone situation: `(zone, turn, visited_zones)`. This allows the algorithm to consider not only possible movements between zones, but also waiting actions, zone capacities, link capacities, restricted zones, and previously visited areas.
+
+A global reservation system manages the occupation of zones and connections over time, preventing conflicts between drones. Paths are planned sequentially: after finding a valid path for a drone, its reservations are added to the system before computing the next drone's route. This produces coordinated, collision-free paths while minimizing the total number of simulation turns.

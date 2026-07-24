@@ -1,69 +1,45 @@
-# Custom Map: The Gauntlet
-nb_drones: 8
-
-start_hub: base 0 0 [color=green max_drones=8]
-
-# Entry split
-hub: gate_a 1 1 [color=orange max_drones=2]
-hub: gate_b 1 -1 [color=orange max_drones=2]
-
-# Middle section
-hub: cross_a 2 2 [zone=restricted color=purple max_drones=2]
-hub: cross_b 2 0 [color=blue max_drones=2]
-hub: cross_c 2 -2 [zone=restricted color=purple max_drones=2]
-
-# Priority express lane
-hub: express 3 0 [zone=priority color=cyan max_drones=3]
-
-# Bottleneck
-hub: neck 4 0 [color=red max_drones=1]
-
-# Exit split
-hub: exit_a 5 1 [color=yellow max_drones=2]
-hub: exit_b 5 -1 [color=yellow max_drones=2]
-
-# Final merge
-hub: merge 6 0 [color=magenta max_drones=4]
-
-end_hub: goal 7 0 [color=gold max_drones=8]
-
-# Entry connections
-connection: base-gate_a
-connection: base-gate_b
-
-# Middle connections
-connection: gate_a-cross_a
-connection: gate_a-cross_b
-connection: gate_b-cross_b
-connection: gate_b-cross_c
-
-# Converge to express
-connection: cross_a-express
-connection: cross_b-express
-connection: cross_c-express
-
-# Bottleneck
-connection: express-neck
-
-# Exit split
-connection: neck-exit_a
-connection: neck-exit_b
-
-# Final merge
-connection: exit_a-merge
-connection: exit_b-merge
-connection: merge-goal
-# Easy Level 2: Simple fork with two paths
-# nb_drones: 3
+# nb_drones: 20
 # 
-# start_hub: start 0 0 [color=green]
-# hub: junction 1 0 [color=yellow max_drones=2]
-# hub: path_a 2 1 [color=blue]
-# hub: priority_path 2 -1 [color=green zone=priority]
-# end_hub: goal 3 0 [color=red max_drones=3]
+# start_hub: start 0 0
+# end_hub: end 2 0
 # 
-# connection: start-junction
-# connection: junction-path_a
-# connection: junction-priority_path
-# connection: path_a-goal
-# connection: priority_path-goal
+# hub: inter 1 0 [max_drones=20]
+# 
+# connection: start-inter [max_link_capacity=20]
+# connection: inter-end [max_link_capacity=20]
+
+
+# nb_drones: 10
+# 
+# start_hub: start 0 0
+# end_hub: end 5 0
+# 
+# hub: inter 2 0 [zone=restricted color=rainbow]
+# 
+# connection: start-inter
+# connection: inter-end
+
+
+# nb_drones: 1
+# start_hub: start 0 0
+# end_hub: end 5 0
+# 
+# hub: inter_a 2 0
+# hub: inter_b 2 1 [zone=priority color=green]
+# hub: inter_c 2 -1 [zone=blocked color=red]
+# 
+# connection: start-inter_a
+# connection: start-inter_b
+# connection: start-inter_c
+# connection: inter_a-end
+# connection: inter_b-end
+# connection: inter_c-end
+
+nb_drones: 3
+start_hub: start 0 0
+end_hub: end 4 0
+
+hub: inter 2 0 [max_drones=2]
+
+connection: start-inter [max_link_capacity=2]
+connection: inter-end [max_link_capacity=2]

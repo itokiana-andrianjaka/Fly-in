@@ -13,14 +13,12 @@ except ModuleNotFoundError as er:
 class View(BaseModel):
     """Represents the visual state of the simulation."""
 
-    scale: float = Field(default=60.0, gt=0.0)  # float au lieu de int
+    scale: float = Field(default=60.0, gt=0.0)
     offset_x: float = Field(default=0.0)
     offset_y: float = Field(default=0.0)
 
-    # True si l'utilisateur maintient le clic gauche pour faire glisser la vue
     dragging: bool = Field(default=False)
 
-    # Dernière position connue de la souris (pour calculer le déplacement)
     last_mouse_pos: tuple[int, int] = Field(default=(0, 0))
 
     def best_view(
@@ -39,7 +37,6 @@ class View(BaseModel):
         if not zones_positions:
             return
 
-        # 1. On trouve les bornes extrêmes de la carte
         min_x = min(pos[0] for pos in zones_positions)
         max_x = max(pos[0] for pos in zones_positions)
         min_y = min(pos[1] for pos in zones_positions)
@@ -53,32 +50,22 @@ class View(BaseModel):
         if world_height == 0:
             world_height = 1
 
-        # 2. ÉLOIGNEMENT AUTOMATIQUE : Si les zones sont trop proches
-        # (ex: écart total < 5 unités)
         if world_width < 7 or world_height < 7:
-            self.scale = 130.0  # On augmente le scale pour forcer un
-            # écartement propre en pixels
+            self.scale = 130.0
         else:
-            self.scale = 60.0  # scale standard par défaut
+            self.scale = 60.0
 
-        # 3. Calcul de la taille de rendu réelle occupée en pixels
         map_width_pixels = world_width * self.scale
         map_height_pixels = world_height * self.scale
 
-        # 4. CHOIX DU CENTRAGE : Est-ce que la carte déborde de l'écran ?
         if (
             map_width_pixels > WINDOW_SIZE[0]
             or map_height_pixels > WINDOW_SIZE[1]
         ):
-            # LA MAP EST TROP GRANDE ->
-            # Focus immédiat au centre sur le hub de START
             start_x, start_y = start_zone_pos
             self.offset_x = (WINDOW_SIZE[0] / 2) - (start_x * self.scale) - 400
             self.offset_y = (WINDOW_SIZE[1] / 2) - (start_y * self.scale) - 100
-            # decalage pour une meilleur visualisation
         else:
-            # LA MAP TIENT DEDANS ->
-            # On la centre globalement au milieu de l'écran
             center_world_x = (min_x + max_x) * self.scale / 2
             center_world_y = (min_y + max_y) * self.scale / 2
             self.offset_x = (WINDOW_SIZE[0] / 2) - center_world_x
@@ -92,16 +79,13 @@ class View(BaseModel):
         Args:
             event (pygame.event.Event): pygame event to process.
         """
-        # Clic gauche enfoncé -> on commence à "attraper" la vue
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             self.dragging = True
             self.last_mouse_pos = pygame.mouse.get_pos()
 
-        # Clic gauche relâché -> on arrête de bouger la vue
         elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
             self.dragging = False
 
-        # Souris en mouvement pendant le clic -> on déplace la vue
         elif event.type == pygame.MOUSEMOTION and self.dragging:
             mouse_x, mouse_y = pygame.mouse.get_pos()
             last_x, last_y = self.last_mouse_pos

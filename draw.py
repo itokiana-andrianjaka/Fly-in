@@ -151,19 +151,6 @@ def create_drone_drawer() -> (
         "lime",
     ]
 
-    drone_offsets = [
-        (0, 0),
-        (6, -4),
-        (-6, 4),
-        (8, 5),
-        (-8, -5),
-        (12, -2),
-        (-12, 2),
-        (4, 10),
-        (-4, -10),
-        (10, 8),
-    ]
-
     def draw_drone(
         screen: pygame.Surface,
         view: View,
@@ -188,10 +175,8 @@ def create_drone_drawer() -> (
         half_w = drone_picture.get_width() // 2
         half_h = drone_picture.get_height() // 2
 
-        # Évolution de la hauteur à chaque frame de l'instance du drone actuel
         drone.current_height += drone.move
 
-        # Inversion de la direction si on atteint les limites (38 et 48)
         if drone.current_height >= 48.0:
             drone.move = -0.1
         elif drone.current_height <= 38.0:
@@ -200,11 +185,8 @@ def create_drone_drawer() -> (
         cx, cy = view.world_to_screen(drone.position[0], drone.position[1])
         picture = drone_picture.copy()
 
-        # Couleur unique par drone grâce à son index dans la flotte
         color_name = drone_colors[drone_index % len(drone_colors)]
         color = pygame.Color(color_name)
-
-        offset_x, offset_y = drone_offsets[drone_index % len(drone_offsets)]
 
         tint = picture.copy()
         tint.fill(color, special_flags=pygame.BLEND_RGBA_ADD)
@@ -213,10 +195,7 @@ def create_drone_drawer() -> (
         )
         screen.blit(
             picture,
-            (
-                cx - half_w + offset_x,
-                cy - half_h - int(drone.current_height) + 10 + offset_y,
-            ),
+            (cx - half_w, cy - half_h - int(drone.current_height) + 10),
         )
 
     return draw_drone

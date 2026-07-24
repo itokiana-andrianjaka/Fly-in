@@ -2,4 +2,3 @@ __pycache__/
 .mypy_cache/
 .venv/
 maps.tar.gz
-

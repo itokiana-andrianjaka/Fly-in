@@ -15,7 +15,13 @@ install:
 	@uv sync
 
 run:
-	@uv run main.py $(MAPS)
+	@uv run main.py $(MAP)
+
+visual:
+	@uv run main.py $(MAP) visual
+
+text_output:
+	@uv run main.py $(MAP) text_output
 
 debug: install
 	@.venv/bin/python -m pdb main.py $(MAPS)

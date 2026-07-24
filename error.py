@@ -4,7 +4,7 @@ import sys
 from typing import NoReturn
 
 COLORS = {
-    "BLUE": "\033[34m",
+    "BLUE": "\033[36m",
     "YELLOW": "\033[33m",
     "RESET": "\033[0m",
 }

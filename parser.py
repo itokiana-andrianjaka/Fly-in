@@ -1,7 +1,8 @@
 """Parser for the configuration file of the drone simulation."""
 
-from error import print_error
 from model import Zone, Connection, ZoneType
+
+from error import print_error
 
 try:
     from pydantic import BaseModel, Field, ValidationError
@@ -84,8 +85,6 @@ class MapParser(BaseModel):
         zone_type = ZoneType.NORMAL
         color: str | None = None
 
-        # Si c'est le départ ou l'arrivée,
-        # la capacité par défaut s'adapte au nombre de drones
         if key in ("start_hub", "end_hub"):
             max_drones = self.nb_drones if self.nb_drones > 0 else 1
         else:
@@ -102,6 +101,9 @@ class MapParser(BaseModel):
                 )
 
             tags = metadata_str[1:-1].split()
+            zone_done = 0
+            color_done = 0
+            max_drones_done = 0
             for tag in tags:
                 if "=" not in tag:
                     raise ValueError(
@@ -112,6 +114,12 @@ class MapParser(BaseModel):
                 info_key, info_val = info_key.strip(), info_val.strip()
 
                 if info_key == "zone":
+                    if zone_done:
+                        raise ValueError(
+                            f"Line {line_num}:"
+                            f"'zone' can only be defined once."
+                        )
+                    zone_done = 1
                     try:
                         zone_type = ZoneType(info_val)
                     except ValueError:
@@ -119,17 +127,41 @@ class MapParser(BaseModel):
                             f"Line {line_num}: Unknown zone type '{info_val}'."
                         )
                 elif info_key == "color":
+                    if color_done:
+                        raise ValueError(
+                            f"Line {line_num}:"
+                            f"'color' can only be defined once."
+                        )
+                    color_done = 1
                     color = info_val
                 elif info_key == "max_drones":
+                    if max_drones_done:
+                        raise ValueError(
+                            f"Line {line_num}:"
+                            f"'max_drones' can only be defined once."
+                        )
+                    max_drones_done = 1
                     try:
                         max_drones = int(info_val)
                         if max_drones <= 0:
                             raise ValueError()
+                        done = 0
+                        if (
+                            key in ("start_hub", "end_hub")
+                            and max_drones < self.nb_drones
+                        ):
+                            done = 1
+                            raise ValueError(
+                                f"Line {line_num}:"
+                                " The max_drones for start_hub and/or "
+                                f"end_hub must always be >= nb_drones"
+                            )
                     except ValueError:
-                        raise ValueError(
-                            f"Line {line_num}: "
-                            "'max_drones' must be a positive integer."
-                        )
+                        if not done:
+                            raise ValueError(
+                                f"Line {line_num}: "
+                                "'max_drones' must be a positive integer."
+                            )
                 else:
                     raise ValueError(f"line{line_num}: unknown metadata info")
 
@@ -146,7 +178,6 @@ class MapParser(BaseModel):
                 )
             self.end_zone_name = name
 
-        # Interception des erreurs de contraintes de Pydantic (ex: ge=0, gt=1)
         try:
             self.zones[name] = Zone(
                 name=name,
@@ -157,7 +188,6 @@ class MapParser(BaseModel):
                 max_drones=max_drones,
             )
         except ValidationError as e:
-            # Récupère le message d'erreur simplifié de Pydantic
             raw_msg = e.errors()[0]["msg"]
             raise ValueError(
                 f"Line {line_num}: "
@@ -206,8 +236,6 @@ class MapParser(BaseModel):
                 f"one or both of the zones ('{z1}' or '{z2}') does not exist."
             )
 
-        # Vérification des connexions dupliquées :
-        # "a-b" et "b-a" sont considérées identiques selon le sujet (VII.4)
         for existing in self.connections:
             if (existing.first_zone == z1 and existing.second_zone == z2) or (
                 existing.first_zone == z2 and existing.second_zone == z1
@@ -321,7 +349,6 @@ class MapParser(BaseModel):
                                 "The first line must be the number of drone"
                             )
 
-            # Validations globales de fin de fichier
             if self.nb_drones <= 0:
                 raise ValueError(
                     "Global configuration error: "
@@ -338,8 +365,6 @@ class MapParser(BaseModel):
                     "'end_hub' configuration is missing."
                 )
 
-            # Vérification de sécurité croisée :
-            # nb_drones vs max_drones de départ
             if self.zones[self.start_zone_name].max_drones < self.nb_drones:
                 raise ValueError(
                     "Global logic error: The start_hub "
@@ -349,6 +374,8 @@ class MapParser(BaseModel):
                 )
 
         except FileNotFoundError:
-            print_error(f"The '{file_path}' file could not be found.")
+            raise FileNotFoundError(
+                f"The '{file_path}' file could not be found."
+            ) from None
         except ValueError as e:
-            print_error(f"Parsing - {e}")
+            raise ValueError(f"Parsing - {e}") from e
