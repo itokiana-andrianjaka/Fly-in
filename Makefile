@@ -43,3 +43,5 @@ lint-strict:
 	@uv run flake8 . --exclude=.venv
 	@echo "${C_BLUE}Running mypy --strict...\n${C_RESET}"
 	@uv run mypy --strict .
+
+.PHONY: install run visual text_output debug clean lint lint-strict
